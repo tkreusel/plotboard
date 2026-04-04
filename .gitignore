@@ -7,3 +7,4 @@ build/
 .streamlit/
 data/
 old_version/
+.presets/
