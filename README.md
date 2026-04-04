@@ -1,4 +1,6 @@
-# Experimental Results Plotter
+# Plotboard
+
+![Plotboard logo](logo/logo.png)
 
 A browser-based plotting tool for luciferase reporter assay data (or any GraphPad Prism-style grouped Excel file). Upload your data, configure every visual aspect of the figure in the sidebar, run statistics, and export publication-ready PNG / SVG / PDF — all without writing code.
 
