@@ -78,6 +78,18 @@ DEFAULTS: dict[str, object] = {
 # Public API
 # ---------------------------------------------------------------------------
 
+def _ensure_default() -> None:
+    """Create the Default preset from DEFAULTS if it doesn't exist yet."""
+    PRESETS_DIR.mkdir(exist_ok=True)
+    default_path = PRESETS_DIR / "Default.json"
+    if not default_path.exists():
+        default_path.write_text(
+            json.dumps(DEFAULTS, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+_ensure_default()
+
+
 def list_presets() -> list[str]:
     """Return sorted list of saved preset names."""
     if not PRESETS_DIR.exists():

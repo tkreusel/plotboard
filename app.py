@@ -214,6 +214,61 @@ if selected_conditions != conditions:
         df["condition"] = df["condition"].cat.remove_unused_categories()
     conditions = selected_conditions
 
+# ---------------------------------------------------------------------------
+# Sidebar — reorder conditions / treatments
+# ---------------------------------------------------------------------------
+
+with st.sidebar:
+    with st.expander("↕ Reorder", expanded=False):
+        st.caption("Change the order number to reorder items in the plot.")
+        reorder_col1, reorder_col2 = st.columns(2)
+
+        with reorder_col1:
+            st.caption("Conditions (x-axis)")
+            cond_order_df = pd.DataFrame({
+                "Condition": conditions,
+                "Order": list(range(1, len(conditions) + 1)),
+            })
+            edited_cond_order = st.data_editor(
+                cond_order_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Condition": st.column_config.TextColumn(disabled=True),
+                    "Order": st.column_config.NumberColumn(min_value=1, step=1),
+                },
+                key="cond_order_editor",
+            )
+            conditions = (
+                edited_cond_order.sort_values("Order", kind="stable")["Condition"]
+                .tolist()
+            )
+
+        with reorder_col2:
+            st.caption("Treatments (legend)")
+            treat_order_df = pd.DataFrame({
+                "Treatment": treatments,
+                "Order": list(range(1, len(treatments) + 1)),
+            })
+            edited_treat_order = st.data_editor(
+                treat_order_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Treatment": st.column_config.TextColumn(disabled=True),
+                    "Order": st.column_config.NumberColumn(min_value=1, step=1),
+                },
+                key="treat_order_editor",
+            )
+            treatments = (
+                edited_treat_order.sort_values("Order", kind="stable")["Treatment"]
+                .tolist()
+            )
+
+# Apply reordering to df so downstream plotting respects the new order
+df["condition"] = pd.Categorical(df["condition"], categories=conditions, ordered=True)
+df["treatment"] = pd.Categorical(df["treatment"], categories=treatments, ordered=True)
+
 n_treatments = len(treatments)
 
 # Warn about missing replicates
