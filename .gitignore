@@ -1,10 +1,51 @@
+# Python
 __pycache__/
-*.pyc
-.venv/
+*.py[cod]
+*.pyo
+*.pyd
 *.egg-info/
+*.egg
 dist/
 build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Secrets / credentials
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.*
+credentials.*
+
+# Streamlit
 .streamlit/
+
+# Plotboard user data
 data/
 old_version/
 .presets/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
