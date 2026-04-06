@@ -43,9 +43,6 @@ st.caption(
 # Populate any missing preset keys with their defaults so every widget has
 # a value on first load and after a preset is applied.
 # ---------------------------------------------------------------------------
-for _k, _v in xpresets.DEFAULTS.items():
-    if _k not in st.session_state:
-        st.session_state[_k] = _v
 
 
 # Shorthand: read a preset-keyed value from session_state.
@@ -95,6 +92,15 @@ with st.sidebar:
             file_label = p.name
         else:
             st.error("File not found or not an .xlsx file.")
+
+# ---------------------------------------------------------------------------
+# Load Default preset whenever a new file is opened
+# ---------------------------------------------------------------------------
+
+if file_bytes is not None and "_active_file" not in st.session_state:
+    st.session_state.update(xpresets.load("Default"))
+    st.session_state["_active_file"] = True
+    st.rerun()
 
 # ---------------------------------------------------------------------------
 # If no file: show instructions and stop
