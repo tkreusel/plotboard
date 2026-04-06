@@ -90,6 +90,24 @@ def _ensure_default() -> None:
 _ensure_default()
 
 
+_STARTUP_FILE = PRESETS_DIR / "_startup.txt"
+
+
+def get_startup_preset() -> str:
+    """Return the name of the preset loaded on session start (default: 'Default')."""
+    if _STARTUP_FILE.exists():
+        name = _STARTUP_FILE.read_text(encoding="utf-8").strip()
+        if (PRESETS_DIR / f"{_sanitise(name)}.json").exists():
+            return name
+    return "Default"
+
+
+def set_startup_preset(name: str) -> None:
+    """Persist *name* as the startup preset."""
+    PRESETS_DIR.mkdir(exist_ok=True)
+    _STARTUP_FILE.write_text(name, encoding="utf-8")
+
+
 def list_presets() -> list[str]:
     """Return sorted list of saved preset names."""
     if not PRESETS_DIR.exists():

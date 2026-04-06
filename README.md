@@ -49,6 +49,22 @@ Rules:
 
 ---
 
+### 💾 Presets
+
+Save and restore all visual/style settings as named presets (stored as JSON files in `.presets/`).
+
+| Control | Description |
+|---|---|
+| **Preset dropdown** | Lists all saved presets. The current startup preset is marked with ★. |
+| **Load** | Apply the selected preset immediately. |
+| **⭐ Set as startup** | Mark the selected preset as the one loaded automatically when a new file is opened. |
+| **🗑 Delete** | Remove the selected preset permanently. |
+| **Name field + Save** | Type a name and click Save to capture all current settings as a new preset. |
+
+The **Default** preset is created automatically on first launch and always reflects the original factory settings. It cannot be accidentally overwritten — rename it if you want a customised starting point.
+
+---
+
 ### 🔍 Filter
 
 | Control | Description |
@@ -179,6 +195,15 @@ Four download buttons appear below every plot:
 | PNG 600 DPI | Raster | 600 |
 | SVG | Vector | — |
 | PDF | Vector (text editable in Illustrator / Inkscape) | — |
+
+### Background options
+
+Below the download buttons:
+
+| Control | Description |
+|---|---|
+| **Transparent background** | Exports with no background fill (PNG and SVG only; PDF falls back to white). |
+| **Background color** | Color picker for the figure background. Disabled when transparent is checked. Default white. |
 
 ### Batch export
 

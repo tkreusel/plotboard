@@ -98,7 +98,7 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 
 if file_bytes is not None and "_active_file" not in st.session_state:
-    st.session_state.update(xpresets.load("Default"))
+    st.session_state.update(xpresets.load(xpresets.get_startup_preset()))
     st.session_state["_active_file"] = True
     st.rerun()
 
@@ -146,13 +146,19 @@ treatments = list(df["treatment"].cat.categories) if hasattr(df["treatment"], "c
 with st.sidebar:
     with st.expander("💾 Presets", expanded=False):
         saved = xpresets.list_presets()
+        startup_preset = xpresets.get_startup_preset()
 
         # -- Load ------------------------------------------------------------
         if saved:
+            # Mark the current startup preset with a star in the dropdown
+            def _preset_label(name: str) -> str:
+                return f"★ {name}" if name == startup_preset else name
+
             col_ps, col_pl = st.columns([3, 1])
             with col_ps:
                 preset_choice = st.selectbox(
-                    "Saved presets", saved, label_visibility="collapsed"
+                    "Saved presets", saved, label_visibility="collapsed",
+                    format_func=_preset_label,
                 )
             with col_pl:
                 if st.button("Load", use_container_width=True):
@@ -165,11 +171,17 @@ with st.sidebar:
                     st.toast(f"Loaded preset '{preset_choice}'", icon="✅")
                     st.rerun()
 
-            # -- Delete ------------------------------------------------------
-            if st.button(f"🗑 Delete '{preset_choice}'", use_container_width=True):
-                xpresets.delete(preset_choice)
-                st.toast(f"Deleted preset '{preset_choice}'", icon="🗑")
-                st.rerun()
+            col_startup, col_del = st.columns(2)
+            with col_startup:
+                if st.button("⭐ Set as startup", use_container_width=True,
+                             help="Load this preset automatically when a file is opened."):
+                    xpresets.set_startup_preset(preset_choice)
+                    st.toast(f"'{preset_choice}' will load on startup", icon="⭐")
+            with col_del:
+                if st.button(f"🗑 Delete", use_container_width=True):
+                    xpresets.delete(preset_choice)
+                    st.toast(f"Deleted preset '{preset_choice}'", icon="🗑")
+                    st.rerun()
         else:
             st.caption("No saved presets yet.")
 
@@ -786,31 +798,43 @@ st.pyplot(fig, use_container_width=False)
 safe_name = f"{file_label.replace('.xlsx','').replace(' ','_')}_{sheet}"
 
 dl_cols = st.columns(4)
+
+# Background options (shown before rendering bytes so they apply to all buttons)
+bg_cols = st.columns([1, 1, 4])
+with bg_cols[0]:
+    export_transparent = st.checkbox("Transparent background", value=False)
+with bg_cols[1]:
+    export_bg_color = st.color_picker("Background color", value="#FFFFFF",
+                                      disabled=export_transparent,
+                                      label_visibility="collapsed")
+
+_export_kwargs = dict(transparent=export_transparent, facecolor=export_bg_color)
+
 with dl_cols[0]:
     st.download_button(
         "⬇️ PNG 300 DPI",
-        data=utils.fig_to_bytes(fig, "png", 300),
+        data=utils.fig_to_bytes(fig, "png", 300, **_export_kwargs),
         file_name=f"{safe_name}_300dpi.png",
         mime="image/png",
     )
 with dl_cols[1]:
     st.download_button(
         "⬇️ PNG 600 DPI",
-        data=utils.fig_to_bytes(fig, "png", 600),
+        data=utils.fig_to_bytes(fig, "png", 600, **_export_kwargs),
         file_name=f"{safe_name}_600dpi.png",
         mime="image/png",
     )
 with dl_cols[2]:
     st.download_button(
         "⬇️ SVG",
-        data=utils.fig_to_bytes(fig, "svg"),
+        data=utils.fig_to_bytes(fig, "svg", **_export_kwargs),
         file_name=f"{safe_name}.svg",
         mime="image/svg+xml",
     )
 with dl_cols[3]:
     st.download_button(
         "⬇️ PDF",
-        data=utils.fig_to_bytes(fig, "pdf"),
+        data=utils.fig_to_bytes(fig, "pdf", **_export_kwargs),
         file_name=f"{safe_name}.pdf",
         mime="application/pdf",
     )

@@ -49,9 +49,31 @@ def get_palette(name: str, n: int) -> list[str]:
 # Figure export
 # ---------------------------------------------------------------------------
 
-def fig_to_bytes(fig: matplotlib.figure.Figure, fmt: str, dpi: int = 300) -> bytes:
+def fig_to_bytes(
+    fig: matplotlib.figure.Figure,
+    fmt: str,
+    dpi: int = 300,
+    transparent: bool = False,
+    facecolor: str = "white",
+) -> bytes:
     """Render *fig* to bytes in the requested format."""
+    fc = "none" if transparent else facecolor
+
+    # Temporarily apply background to figure patch and all axes so the full
+    # plot area (not just the outer margin) reflects the chosen color.
+    orig_fig_fc = fig.get_facecolor()
+    orig_axes_fc = [(ax, ax.get_facecolor()) for ax in fig.axes]
+    fig.patch.set_facecolor(fc)
+    for ax in fig.axes:
+        ax.set_facecolor(fc)
+
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=dpi, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=dpi, bbox_inches="tight", transparent=transparent)
+
+    # Restore so the on-screen preview is unaffected
+    fig.patch.set_facecolor(orig_fig_fc)
+    for ax, orig_fc in orig_axes_fc:
+        ax.set_facecolor(orig_fc)
+
     buf.seek(0)
     return buf.read()
