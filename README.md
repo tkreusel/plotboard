@@ -8,9 +8,16 @@ A browser-based plotting tool for luciferase reporter assay data (or any GraphPa
 
 ## Quick start
 
+**With uv (recommended):**
 ```bash
-conda create -n plotting python=3.11
-conda activate plotting
+uv sync
+uv run streamlit run app.py
+```
+
+**With conda:**
+```bash
+conda create -n plotboard python=3.11
+conda activate plotboard
 pip install -e .
 streamlit run app.py
 ```
