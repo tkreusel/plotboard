@@ -45,6 +45,13 @@ DEFAULTS: dict[str, object] = {
     "ps_bar_gap":          0.0,
     "ps_fig_width":        11,
     "ps_fig_height":       6,
+    # Line plot
+    "ps_x_numeric":        False,
+    "ps_x_suffix":         "",
+    "ps_error_style":      "band",
+    "ps_line_width":       1.5,
+    "ps_marker_style":     "o",
+    "ps_marker_size":      6.0,
     # Statistics
     "ps_run_stats":        False,
     "ps_test_mode":        "ttest",

@@ -7,10 +7,13 @@ The DataFrame must have columns: condition, treatment, replicate, value
 
 from __future__ import annotations
 
+import re
+
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.ticker as mticker
+import numpy as np
 import pandas as pd
 import seaborn as sns
 
@@ -71,6 +74,13 @@ def make_figure(
     y_format: str = "auto",           # "auto" | "plain" | "sci" | "SI"
     ylim: tuple | None = None,        # (min, max), either may be None
     xlim: tuple | None = None,
+    # Line plot
+    x_numeric: bool = False,       # True → proportional x spacing from numeric condition labels
+    error_style: str = "band",     # "band" | "bars"
+    line_width: float = 1.5,
+    marker_style: str = "o",
+    marker_size: float = 6.0,
+    x_suffix: str = "",            # appended to tick labels when conditions are purely numeric
     # Stats
     stat_results: pd.DataFrame | None = None,
     show_ns: bool = False,
@@ -150,6 +160,7 @@ def make_figure(
             edgecolor=bar_edge_color,
             linewidth=bar_edge_width,
             err_kws={"linewidth": 1.2},
+            saturation=1.0,
         )
         # Post-draw: shrink bars symmetrically (bar centers fixed → strip/brackets stay aligned)
         if bar_gap > 0:
@@ -183,6 +194,128 @@ def make_figure(
             width=_elem_width,
             cut=0,
         )
+    elif plot_type == "line":
+        # ---- Resolve x positions -----------------------------------------
+        # Try to extract a leading numeric value from each condition label.
+        # "1" → 1.0, "24" → 24.0, "1h" → 1.0, "100 nM" → 100.0
+        # If all conditions yield a number AND x_numeric is requested, use
+        # proportional spacing; otherwise fall back to 0,1,2,… (categorical).
+        _NUM_RE = re.compile(r"^\s*([+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)")
+
+        def _try_numeric(s: str) -> float | None:
+            m = _NUM_RE.match(str(s))
+            return float(m.group(1)) if m else None
+
+        _parsed = [_try_numeric(c) for c in conditions]
+        _all_numeric = all(v is not None for v in _parsed)
+
+        if x_numeric and _all_numeric:
+            x_vals = [v for v in _parsed]      # type: ignore[misc]
+            # Tick labels: use original condition string (already contains unit if present)
+            # plus x_suffix only when the condition label is purely numeric (no letters)
+            _tick_labels = [
+                str(c) + (x_suffix if re.fullmatch(r"[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?", str(c).strip()) else "")
+                for c in conditions
+            ]
+        else:
+            x_vals = list(range(len(conditions)))
+            _tick_labels = [str(c) for c in conditions]
+
+        # ---- One line per treatment ---------------------------------------
+        for i, treatment in enumerate(treatments):
+            color = palette[i % len(palette)]
+            grp = df[df["treatment"] == treatment]
+            means: list[float] = []
+            errs: list[float] = []
+            for cond in conditions:
+                vals = grp[grp["condition"] == cond]["value"].dropna().values
+                n = len(vals)
+                if n == 0:
+                    means.append(float("nan"))
+                    errs.append(float("nan"))
+                    continue
+                mean = float(np.mean(vals))
+                means.append(mean)
+                if n > 1:
+                    sd = float(np.std(vals, ddof=1))
+                    errs.append({"sd": sd,
+                                 "sem": sd / np.sqrt(n),
+                                 "ci95": 1.96 * sd / np.sqrt(n)}.get(error_bar, sd))
+                else:
+                    errs.append(float("nan"))
+
+            m_arr = np.array(means)
+            e_arr = np.array(errs)
+
+            ax.plot(x_vals, m_arr, color=color, linewidth=line_width,
+                    marker=marker_style if marker_style != "none" else None,
+                    markersize=marker_size, label=treatment, zorder=3)
+
+            valid = ~np.isnan(e_arr) & ~np.isnan(m_arr)
+            if valid.any():
+                xv = np.array(x_vals)
+                if error_style == "band":
+                    ax.fill_between(xv[valid], (m_arr - e_arr)[valid], (m_arr + e_arr)[valid],
+                                    color=color, alpha=0.15, zorder=2)
+                else:
+                    ax.errorbar(xv[valid], m_arr[valid], yerr=e_arr[valid],
+                                fmt="none", ecolor=color,
+                                capsize=cap_size * 80, elinewidth=0.8, zorder=2)
+
+            if show_points:
+                for j, cond in enumerate(conditions):
+                    pts = grp[grp["condition"] == cond]["value"].dropna().values
+                    ax.scatter([x_vals[j]] * len(pts), pts,
+                               color=color, s=(point_size ** 2) * 0.5,
+                               alpha=point_alpha, zorder=4, linewidths=0.3)
+
+        # ---- X ticks -------------------------------------------------------
+        ax.set_xticks(x_vals)
+        ax.set_xticklabels(_tick_labels, rotation=tick_rotation,
+                           fontsize=_tick_fs, ha="right" if tick_rotation > 0 else "center")
+
+        # ---- Legend (from ax.plot labels) ----------------------------------
+        if show_legend:
+            leg_kw = (dict(loc="upper right", bbox_to_anchor=(0.98, 0.98), borderaxespad=0)
+                      if legend_inside else
+                      dict(loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0))
+            ax.legend(title=legend_title, frameon=False,
+                      fontsize=fs["legend_fs"], title_fontsize=fs["legend_title_fs"],
+                      **leg_kw)
+        else:
+            ax.legend_.remove() if ax.get_legend() else None
+
+        # ---- Axes styling (line-specific, then fall through) ---------------
+        if log_scale:
+            ax.set_yscale("log")
+        ax.set_title(title, fontsize=fs["title_fs"], pad=10)
+        ax.set_xlabel(xlabel, fontsize=fs["axis_label_fs"], labelpad=6)
+        ax.set_ylabel(ylabel, fontsize=fs["axis_label_fs"], labelpad=6)
+        ax.tick_params(axis="y", labelsize=_tick_fs)
+        if spines == "open":
+            sns.despine(ax=ax, top=True, right=True)
+        elif spines == "none":
+            sns.despine(ax=ax, top=True, right=True, left=True, bottom=True)
+            ax.tick_params(left=False, bottom=False)
+        else:
+            sns.despine(ax=ax, top=False, right=False)
+        for spine in ax.spines.values():
+            spine.set_linewidth(spine_width)
+        ax.tick_params(width=spine_width)
+        _apply_y_format(ax, y_format)
+        if ylim is not None:
+            lo, hi = ylim
+            cur_lo, cur_hi = ax.get_ylim()
+            ax.set_ylim(lo if lo is not None else cur_lo,
+                        hi if hi is not None else cur_hi)
+        if xlim is not None:
+            lo, hi = xlim
+            cur_lo, cur_hi = ax.get_xlim()
+            ax.set_xlim(lo if lo is not None else cur_lo,
+                        hi if hi is not None else cur_hi)
+        fig.tight_layout()
+        return fig
+
     else:
         raise ValueError(f"Unknown plot_type: {plot_type!r}")
 

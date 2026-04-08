@@ -1,11 +1,14 @@
 """
 stats.py — Statistical tests and significance bar drawing for grouped plots.
 
-Two test modes:
-  "ttest"  — independent two-sample t-test, each condition vs. a chosen reference,
-              per treatment group.
-  "tukey"  — one-way ANOVA per treatment group followed by Tukey's HSD across
-              all pairwise condition combinations.
+Three test modes:
+  "ttest"         — independent two-sample t-test, each condition vs. a chosen
+                    reference, per treatment group.
+  "tukey"         — one-way ANOVA per treatment group followed by Tukey's HSD
+                    across all pairwise condition combinations.
+  "two_way_anova" — two-way ANOVA (condition × treatment) followed by Sidak
+                    post-hoc pairwise comparisons with correction applied across
+                    all tests in the design.
 
 Significance thresholds: *** p<0.001 | ** p<0.01 | * p<0.05 | ns
 """
@@ -114,6 +117,134 @@ def run_tukey_between_treatments(df: pd.DataFrame) -> pd.DataFrame:
     return _run_tukey_impl(df, between="treatment", fixed_col="condition")
 
 
+def run_two_way_anova_sidak(
+    df: pd.DataFrame,
+    compare_axis: str = "conditions",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Two-way ANOVA (condition × treatment) + Sidak post-hoc pairwise comparisons.
+
+    Post-hoc uses the ANOVA's own MSresidual as the pooled error term (matching
+    Prism's behaviour), not individual per-pair variances:
+        t = (mean_A - mean_B) / sqrt(MSresidual * (1/nA + 1/nB))
+        p_raw  ~ t-distribution with df_residual degrees of freedom
+        p_sidak = 1 - (1 - p_raw) ^ k   [applied across all k pairs at once]
+
+    compare_axis="conditions" — condition pairs within each treatment (k = C(nC,2)*nT)
+    compare_axis="treatments" — treatment pairs within each condition (k = C(nT,2)*nC)
+    compare_axis="cells"      — all cell pairs regardless of row/column, matches
+                                Prism "Compare cell means regardless of rows and columns"
+                                (k = C(nC*nT, 2))
+
+    Returns (anova_table, posthoc_df).
+      anova_table — pingouin ANOVA DataFrame (Source, SS, DF, MS, F, p-unc, np2)
+      posthoc_df  — columns depend on compare_axis; bracket drawing handles all three
+    """
+    import itertools
+
+    try:
+        import pingouin as pg
+    except ImportError:
+        raise ImportError(
+            "pingouin is required for Two-way ANOVA. Install with: pip install pingouin"
+        )
+
+    sub = df[["condition", "treatment", "value"]].dropna().copy()
+    sub["condition"] = sub["condition"].astype(str)
+    sub["treatment"] = sub["treatment"].astype(str)
+
+    if sub["condition"].nunique() < 2:
+        raise ValueError("Two-way ANOVA requires at least 2 conditions.")
+    if sub["treatment"].nunique() < 2:
+        raise ValueError("Two-way ANOVA requires at least 2 treatments.")
+
+    # --- Two-way ANOVA table ------------------------------------------------
+    anova_table = pg.anova(
+        data=sub, dv="value", between=["condition", "treatment"], ss_type=2
+    )
+
+    # Extract pooled error from ANOVA (Residual row)
+    res_rows = anova_table[anova_table["Source"] == "Residual"]
+    if res_rows.empty or float(res_rows.iloc[0]["MS"]) <= 0:
+        raise ValueError("Could not extract valid MSresidual from the ANOVA table.")
+    ms_res = float(res_rows.iloc[0]["MS"])
+    df_res = float(res_rows.iloc[0]["DF"])
+
+    def _pvalue(vals_a: np.ndarray, vals_b: np.ndarray) -> float | None:
+        """t-test using ANOVA's pooled MSresidual as the error term."""
+        if len(vals_a) < 1 or len(vals_b) < 1:
+            return None
+        se = np.sqrt(ms_res * (1.0 / len(vals_a) + 1.0 / len(vals_b)))
+        if se == 0:
+            return None
+        t = (float(np.mean(vals_a)) - float(np.mean(vals_b))) / se
+        return float(2.0 * scipy_stats.t.sf(abs(t), df=df_res))
+
+    # --- Build raw pair list ------------------------------------------------
+    records_raw: list[dict] = []
+
+    if compare_axis == "conditions":
+        all_conditions = list(sub["condition"].unique())
+        for treatment in sub["treatment"].unique():
+            grp = sub[sub["treatment"] == treatment]
+            for cond_a, cond_b in itertools.combinations(all_conditions, 2):
+                vals_a = grp[grp["condition"] == cond_a]["value"].values
+                vals_b = grp[grp["condition"] == cond_b]["value"].values
+                p = _pvalue(vals_a, vals_b)
+                if p is not None:
+                    records_raw.append({"treatment": str(treatment),
+                                        "group_A": cond_a, "group_B": cond_b, "p_raw": p})
+        fixed_key, axis_label = "treatment", "conditions"
+        cols = ["treatment", "group_A", "group_B", "p_value", "stars", "compare_axis"]
+
+    elif compare_axis == "treatments":
+        all_treatments = list(sub["treatment"].unique())
+        for condition in sub["condition"].unique():
+            grp = sub[sub["condition"] == condition]
+            for treat_a, treat_b in itertools.combinations(all_treatments, 2):
+                vals_a = grp[grp["treatment"] == treat_a]["value"].values
+                vals_b = grp[grp["treatment"] == treat_b]["value"].values
+                p = _pvalue(vals_a, vals_b)
+                if p is not None:
+                    records_raw.append({"condition": str(condition),
+                                        "group_A": treat_a, "group_B": treat_b, "p_raw": p})
+        fixed_key, axis_label = "condition", "treatments"
+        cols = ["condition", "group_A", "group_B", "p_value", "stars", "compare_axis"]
+
+    else:  # "cells" — all cell means vs all, matches Prism's option
+        all_conditions = list(sub["condition"].unique())
+        all_treatments = list(sub["treatment"].unique())
+        all_cells = list(itertools.product(all_conditions, all_treatments))
+        for (cA, tA), (cB, tB) in itertools.combinations(all_cells, 2):
+            vals_a = sub[(sub["condition"] == cA) & (sub["treatment"] == tA)]["value"].values
+            vals_b = sub[(sub["condition"] == cB) & (sub["treatment"] == tB)]["value"].values
+            p = _pvalue(vals_a, vals_b)
+            if p is not None:
+                records_raw.append({"cond_A": cA, "treat_A": tA,
+                                    "cond_B": cB, "treat_B": tB, "p_raw": p})
+        fixed_key, axis_label = None, "cells"
+        cols = ["cond_A", "treat_A", "cond_B", "treat_B", "p_value", "stars", "compare_axis"]
+
+    # --- Apply Sidak correction across all k pairs --------------------------
+    k = len(records_raw)
+    records = []
+    for r in records_raw:
+        p_sidak = min(1.0 - (1.0 - r["p_raw"]) ** k, 1.0)
+        if axis_label == "cells":
+            entry = {"cond_A": r["cond_A"], "treat_A": r["treat_A"],
+                     "cond_B": r["cond_B"], "treat_B": r["treat_B"],
+                     "p_value": p_sidak, "stars": pval_to_stars(p_sidak),
+                     "compare_axis": "cells"}
+        else:
+            entry = {"group_A": r["group_A"], "group_B": r["group_B"],
+                     "p_value": p_sidak, "stars": pval_to_stars(p_sidak),
+                     "compare_axis": axis_label, fixed_key: r[fixed_key]}
+        records.append(entry)
+
+    posthoc_df = pd.DataFrame(records, columns=cols) if records else pd.DataFrame(columns=cols)
+    return anova_table, posthoc_df
+
+
 def _run_tukey_impl(df: pd.DataFrame, *, between: str, fixed_col: str) -> pd.DataFrame:
     try:
         import pingouin as pg
@@ -180,6 +311,8 @@ def draw_significance_bars(
         different condition groups (the default Tukey / t-test mode).
     compare_axis="treatments": brackets span bars of different treatments within
         the same condition group (between-treatment Tukey).
+    compare_axis="cells": brackets span any two bars (two-way ANOVA all-cell
+        comparison); x-positions are computed for each specific cell.
 
     Bracket x-positions use seaborn's dodge formula:
         x_center = condition_idx + (treatment_idx - (n_treatments-1)/2) * (0.8/n_treatments)
@@ -204,7 +337,22 @@ def draw_significance_bars(
         if stars == "ns" and not show_ns:
             continue
 
-        if compare_axis == "treatments":
+        if compare_axis == "cells":
+            # Any two cells — each has its own condition+treatment position
+            cond_a = str(row["cond_A"])
+            cond_b = str(row["cond_B"])
+            treat_a = str(row["treat_A"])
+            treat_b = str(row["treat_B"])
+            if (cond_a not in conditions or cond_b not in conditions
+                    or treat_a not in treatments or treat_b not in treatments):
+                continue
+            x1 = bar_x(conditions.index(cond_a), treatments.index(treat_a))
+            x2 = bar_x(conditions.index(cond_b), treatments.index(treat_b))
+            k1 = f"{cond_a}|{treat_a}"
+            k2 = f"{cond_b}|{treat_b}"
+            pair_key = (min(k1, k2), max(k1, k2))
+
+        elif compare_axis == "treatments":
             # Brackets between two treatments within one condition
             condition = str(row["condition"])
             if condition not in conditions:

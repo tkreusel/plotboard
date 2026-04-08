@@ -45,9 +45,10 @@ st.caption(
 # ---------------------------------------------------------------------------
 
 
-# Shorthand: read a preset-keyed value from session_state.
+# Shorthand: read a preset-keyed value from session_state, falling back to
+# DEFAULTS so that keys for unrendered widgets (cleared by Streamlit) still work.
 def _ps(key: str):
-    return st.session_state[key]
+    return st.session_state.get(key, xpresets.DEFAULTS.get(key))
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +102,13 @@ if file_bytes is not None and "_active_file" not in st.session_state:
     st.session_state.update(xpresets.load(xpresets.get_startup_preset()))
     st.session_state["_active_file"] = True
     st.rerun()
+
+# Seed any DEFAULTS keys missing from session_state so sliders always find
+# their value and don't fall back to min_value on first render after a
+# plot-type switch clears unrendered widget keys.
+for _k, _v in xpresets.DEFAULTS.items():
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
 
 # ---------------------------------------------------------------------------
 # If no file: show instructions and stop
@@ -304,7 +312,7 @@ with st.sidebar:
     st.header("📊 Plot type")
     plot_type = st.radio(
         "Plot type",
-        ["bar+strip", "box+strip", "violin+strip"],
+        ["bar+strip", "box+strip", "violin+strip", "line+scatter"],
         key="ps_plot_type",
         label_visibility="collapsed",
     )
@@ -320,7 +328,7 @@ with st.sidebar:
 
     show_grid = st.checkbox("Y-axis gridlines", key="ps_show_grid")
 
-    if _base_type == "bar":
+    if _base_type in ("bar", "line"):
         col_eb, col_cap = st.columns(2)
         with col_eb:
             error_bar = st.radio(
@@ -363,6 +371,45 @@ with st.sidebar:
         show_legend = st.checkbox("Show legend", key="ps_show_legend")
     with col_li:
         legend_inside = st.checkbox("Legend inside", key="ps_legend_inside")
+
+    # ---- Line options (only when line plot) --------------------------------
+    if _base_type == "line":
+        st.header("📈 Line options")
+        # Auto-detect whether all conditions are numeric-prefixed
+        import re as _re
+        _NUM_RE = _re.compile(r"^\s*[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?")
+        _auto_numeric = all(_NUM_RE.match(str(c)) for c in conditions)
+        # Seed the checkbox default on first load (only if key not yet in session state)
+        if "ps_x_numeric" not in st.session_state:
+            st.session_state["ps_x_numeric"] = _auto_numeric
+        x_numeric = st.checkbox("Numeric x-axis (proportional spacing)",
+                                key="ps_x_numeric",
+                                help="Auto-detected from condition labels. Uncheck to use equal spacing.")
+        x_suffix = st.text_input("X-axis unit suffix (appended to pure-number labels)",
+                                 key="ps_x_suffix", placeholder="e.g.  h  or  nM")
+        error_style = st.radio("Error style", ["band", "bars"], key="ps_error_style",
+                               format_func=lambda x: {"band": "Shaded band", "bars": "Error bars"}[x],
+                               horizontal=True)
+        col_lw, col_ms = st.columns(2)
+        with col_lw:
+            line_width = st.slider("Line width", 0.5, 4.0, key="ps_line_width", step=0.1)
+        with col_ms:
+            marker_size = st.slider("Marker size", 2.0, 14.0, key="ps_marker_size", step=0.5)
+        marker_style = st.selectbox(
+            "Marker",
+            ["o", "s", "^", "D", "x", "v", "P", "none"],
+            key="ps_marker_style",
+            format_func=lambda x: {"o": "● Circle", "s": "■ Square", "^": "▲ Triangle up",
+                                   "D": "◆ Diamond", "x": "✕ Cross", "v": "▼ Triangle down",
+                                   "P": "✚ Plus (filled)", "none": "No marker"}[x],
+        )
+    else:
+        x_numeric    = _ps("ps_x_numeric")
+        x_suffix     = _ps("ps_x_suffix")
+        error_style  = _ps("ps_error_style")
+        line_width   = _ps("ps_line_width")
+        marker_size  = _ps("ps_marker_size")
+        marker_style = _ps("ps_marker_style")
 
     # ---- Colors -----------------------------------------------------------
     st.header("🎨 Colors")
@@ -409,12 +456,16 @@ with st.sidebar:
 
     # ---- Statistics -------------------------------------------------------
     st.header("📈 Statistics")
-    run_stats = st.checkbox("Run statistical tests", key="ps_run_stats")
+    if _base_type == "line":
+        st.info("Statistical annotations are not available for line plots.")
+    run_stats = st.checkbox("Run statistical tests", key="ps_run_stats",
+                            disabled=_base_type == "line")
     stat_results: pd.DataFrame | None = None
     stat_results_all: pd.DataFrame | None = None
+    anova_table: pd.DataFrame | None = None
     test_mode    = _ps("ps_test_mode")
     compare_axis = _ps("ps_compare_axis")
-    show_ns      = _ps("ps_show_ns")
+    show_ns      = True
     bracket_linewidth = _ps("ps_bracket_linewidth")
     bracket_fontsize  = _ps("ps_bracket_fontsize")
     show_pvalue  = _ps("ps_show_pvalue")
@@ -422,27 +473,34 @@ with st.sidebar:
     if run_stats:
         test_mode = st.radio(
             "Test",
-            ["ttest", "tukey"],
+            ["ttest", "tukey", "two_way_anova"],
             key="ps_test_mode",
             format_func=lambda x: {
-                "ttest": "t-test vs reference condition",
-                "tukey": "ANOVA + Tukey HSD (all pairs)",
+                "ttest":         "t-test vs reference condition",
+                "tukey":         "ANOVA + Tukey HSD (all pairs)",
+                "two_way_anova": "Two-way ANOVA + Sidak",
             }[x],
         )
 
-        if test_mode == "tukey":
+        if test_mode in ("tukey", "two_way_anova"):
+            # "cells" is only valid for two_way_anova; reset if tukey is picked
+            if test_mode == "tukey" and st.session_state.get("ps_compare_axis") == "cells":
+                st.session_state["ps_compare_axis"] = "conditions"
+            _axis_opts = (["conditions", "treatments", "cells"]
+                          if test_mode == "two_way_anova"
+                          else ["conditions", "treatments"])
             compare_axis = st.radio(
                 "Compare",
-                ["conditions", "treatments"],
+                _axis_opts,
                 key="ps_compare_axis",
                 format_func=lambda x: {
                     "conditions": "Conditions (per treatment)",
                     "treatments": "Treatments (per condition)",
+                    "cells":      "All cell means — global Sidak",
                 }[x],
                 horizontal=True,
             )
 
-        show_ns     = st.checkbox("Show 'ns' (non-significant)", key="ps_show_ns")
         show_pvalue = st.checkbox("Show p-values instead of stars", key="ps_show_pvalue")
 
         if test_mode == "ttest":
@@ -454,6 +512,8 @@ with st.sidebar:
             try:
                 if test_mode == "ttest":
                     stat_results_all = xstats.run_ttests_vs_reference(df, ref_cond)
+                elif test_mode == "two_way_anova":
+                    anova_table, stat_results_all = xstats.run_two_way_anova_sidak(df, compare_axis)
                 elif compare_axis == "conditions":
                     stat_results_all = xstats.run_tukey(df)
                 else:
@@ -462,33 +522,7 @@ with st.sidebar:
                 st.error(f"Statistical test failed: {e}")
                 stat_results_all = None
 
-        if stat_results_all is not None and not stat_results_all.empty:
-            def _pair_label(row) -> str:
-                if compare_axis == "treatments":
-                    return f"{row['group_A']} vs {row['group_B']}  [{row['condition']}]  {row['stars']}"
-                elif test_mode == "ttest":
-                    return f"{row['condition']} vs {row['reference']}  [{row['treatment']}]  {row['stars']}"
-                else:
-                    return f"{row['group_A']} vs {row['group_B']}  [{row['treatment']}]  {row['stars']}"
-
-            stat_results_all = stat_results_all.copy()
-            stat_results_all["_label"] = stat_results_all.apply(_pair_label, axis=1)
-
-            sig_labels = stat_results_all.loc[
-                stat_results_all["stars"] != "ns", "_label"
-            ].tolist()
-
-            selected_pairs = st.multiselect(
-                "Show brackets for",
-                options=stat_results_all["_label"].tolist(),
-                default=sig_labels,
-                help="Only selected comparisons are drawn. Defaults to significant pairs.",
-            )
-
-            stat_results = stat_results_all[
-                stat_results_all["_label"].isin(selected_pairs)
-            ].drop(columns=["_label"])
-            stat_results_all = stat_results_all.drop(columns=["_label"])
+        # Bracket selection moves to the main area (data_editor table before the plot)
 
         st.caption("Bracket style")
         col_blw, col_bfs = st.columns(2)
@@ -663,11 +697,12 @@ if any(v != k for k, v in treat_rename.items()):
 
 if stat_results is not None and not stat_results.empty and (cond_rename or treat_rename):
     stat_results = stat_results.copy()
-    for col in ["condition", "reference", "group_A", "group_B"]:
+    for col in ["condition", "reference", "group_A", "group_B", "cond_A", "cond_B"]:
         if col in stat_results.columns:
             stat_results[col] = stat_results[col].map(lambda v: cond_rename.get(v, v))
-    if "treatment" in stat_results.columns:
-        stat_results["treatment"] = stat_results["treatment"].map(lambda v: treat_rename.get(v, v))
+    for col in ["treatment", "treat_A", "treat_B"]:
+        if col in stat_results.columns:
+            stat_results[col] = stat_results[col].map(lambda v: treat_rename.get(v, v))
 
 
 # ---------------------------------------------------------------------------
@@ -744,6 +779,35 @@ with st.expander("📦 Batch export — plot all sheets", expanded=False):
 
 
 # ---------------------------------------------------------------------------
+# Main area — statistical comparisons table (bracket selector)
+# Rendered before the plot so checkbox edits take effect on the same run.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Main area — resolve stat_results from previous run's checkbox state
+# The comparison table is rendered BELOW the plot; its session-state key
+# carries the user's selections into the next rerun, which the plot reads here.
+# ---------------------------------------------------------------------------
+
+_editor_key = f"stat_editor_{test_mode}_{compare_axis}_{sheet}"
+
+if run_stats and stat_results_all is not None and not stat_results_all.empty:
+    # Sort once numerically and cache so the table and the plot use identical ordering.
+    _sa_sorted = stat_results_all.sort_values("p_value").reset_index(drop=True)
+    st.session_state[_editor_key + "_sorted"] = _sa_sorted
+
+    # Reconstruct current checkbox state from the raw edit dict Streamlit stores.
+    # Format: {"edited_rows": {str(row_idx): {"col": val, ...}}, ...}
+    _raw = st.session_state.get(_editor_key, {})
+    _show = [False] * len(_sa_sorted)
+    for _idx_str, _changes in _raw.get("edited_rows", {}).items():
+        if "Show bracket" in _changes:
+            _show[int(_idx_str)] = bool(_changes["Show bracket"])
+
+    _selected = _sa_sorted[_show].copy()
+    stat_results = _selected if not _selected.empty else None
+
+# ---------------------------------------------------------------------------
 # Main area — current sheet figure
 # ---------------------------------------------------------------------------
 
@@ -780,7 +844,13 @@ fig = plotter.make_figure(
     y_format=y_format,
     ylim=ylim,
     xlim=xlim,
-    stat_results=stat_results,
+    x_numeric=x_numeric,
+    error_style=error_style,
+    line_width=line_width,
+    marker_style=marker_style,
+    marker_size=marker_size,
+    x_suffix=x_suffix,
+    stat_results=stat_results if _base_type != "line" else None,
     show_ns=show_ns,
     test_mode=test_mode,
     compare_axis=compare_axis,
@@ -845,11 +915,72 @@ plt.close(fig)
 # Stats table
 # ---------------------------------------------------------------------------
 
-if run_stats and stat_results is not None and not stat_results.empty:
-    st.subheader("Statistical results")
-    display_df = stat_results.copy()
-    display_df["p_value"] = display_df["p_value"].map("{:.4f}".format)
-    st.dataframe(display_df, use_container_width=True)
+if run_stats and test_mode == "two_way_anova" and anova_table is not None and not anova_table.empty:
+    st.subheader("Two-way ANOVA table")
+    # pingouin column names vary by version; pick what's available
+    _p_col = next((c for c in ["p-unc", "p_unc", "pvalue"] if c in anova_table.columns), None)
+    _df_col = next((c for c in ["DF", "df", "ddof1"] if c in anova_table.columns), None)
+    _keep = [c for c in ["Source", "SS", _df_col, "MS", "F", _p_col] if c is not None and c in anova_table.columns]
+    display_anova = anova_table[_keep].copy()
+    if _p_col and _p_col in display_anova.columns:
+        display_anova[_p_col] = display_anova[_p_col].map(
+            lambda p: f"{p:.4f}" if pd.notna(p) and p >= 0.0001 else ("<0.0001" if pd.notna(p) else "—")
+        )
+        display_anova = display_anova.rename(columns={_p_col: "p-value"})
+    if _df_col and _df_col in display_anova.columns:
+        display_anova = display_anova.rename(columns={_df_col: "df"})
+    st.dataframe(display_anova, use_container_width=True)
+
+# ---------------------------------------------------------------------------
+# Statistical comparisons table (bracket selector)
+# ---------------------------------------------------------------------------
+
+if run_stats and stat_results_all is not None and not stat_results_all.empty:
+    st.subheader("📋 Statistical comparisons")
+    st.caption("Tick a row to draw its bracket on the plot.")
+
+    # Use the same numerically-sorted frame that the plot reads from.
+    _sa = st.session_state.get(_editor_key + "_sorted", stat_results_all.sort_values("p_value").reset_index(drop=True)).copy()
+    _sa["p-adj"] = _sa["p_value"].map(
+        lambda p: f"{p:.4f}" if p >= 0.0001 else "<0.0001"
+    )
+    _sa["Show bracket"] = False   # default; Streamlit restores user edits via _editor_key
+
+    if compare_axis == "cells":
+        _disp_cols = ["cond_A", "treat_A", "cond_B", "treat_B", "p-adj", "stars", "Show bracket"]
+        _col_labels = {"cond_A": "Condition A", "treat_A": "Treatment A",
+                       "cond_B": "Condition B", "treat_B": "Treatment B", "stars": "Sig."}
+    elif compare_axis == "treatments":
+        _disp_cols = ["condition", "group_A", "group_B", "p-adj", "stars", "Show bracket"]
+        _col_labels = {"condition": "Condition", "group_A": "Treatment A",
+                       "group_B": "Treatment B", "stars": "Sig."}
+    elif test_mode == "ttest":
+        _disp_cols = ["treatment", "reference", "condition", "p-adj", "stars", "Show bracket"]
+        _col_labels = {"treatment": "Treatment", "reference": "Reference",
+                       "condition": "Condition", "stars": "Sig."}
+    else:
+        _disp_cols = ["treatment", "group_A", "group_B", "p-adj", "stars", "Show bracket"]
+        _col_labels = {"treatment": "Treatment", "group_A": "Condition A",
+                       "group_B": "Condition B", "stars": "Sig."}
+
+    _disp = _sa[[c for c in _disp_cols if c in _sa.columns]].rename(columns=_col_labels)
+
+    _col_cfg = {c: st.column_config.TextColumn(c, disabled=True)
+                for c in _disp.columns if c != "Show bracket"}
+    _col_cfg["Show bracket"] = st.column_config.CheckboxColumn(
+        "Show bracket", help="Tick to draw a bracket on the plot"
+    )
+
+    st.data_editor(
+        _disp,
+        column_config=_col_cfg,
+        use_container_width=True,
+        hide_index=True,
+        key=_editor_key,
+    )
+
+elif run_stats and stat_results_all is not None and stat_results_all.empty:
+    st.info("No comparisons could be computed (check that all groups have ≥ 2 replicates).")
 
 # ---------------------------------------------------------------------------
 # Data preview
