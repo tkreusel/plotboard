@@ -403,13 +403,41 @@ with st.sidebar:
                                    "D": "◆ Diamond", "x": "✕ Cross", "v": "▼ Triangle down",
                                    "P": "✚ Plus (filled)", "none": "No marker"}[x],
         )
+        st.caption("Trend line")
+        trendline = st.selectbox(
+            "Fit type",
+            ["none", "linear", "poly2", "poly3", "exp", "log", "power", "spline"],
+            key="ps_trendline",
+            format_func=lambda x: {
+                "none": "None", "linear": "Linear", "poly2": "Polynomial deg 2",
+                "poly3": "Polynomial deg 3", "exp": "Exponential",
+                "log": "Logarithmic", "power": "Power law",
+                "spline": "Smoothing spline",
+            }[x],
+        )
+        if trendline != "none":
+            col_ts, col_tm = st.columns(2)
+            with col_ts:
+                trendline_source = st.radio("Fit data", ["means", "replicates"],
+                                            key="ps_trendline_source",
+                                            format_func=lambda x: {"means": "Means", "replicates": "All replicates"}[x])
+            with col_tm:
+                trendline_mode = st.radio("Mode", ["overlay", "replace"],
+                                          key="ps_trendline_mode",
+                                          format_func=lambda x: {"overlay": "Overlay", "replace": "Replace line"}[x])
+        else:
+            trendline_source = _ps("ps_trendline_source")
+            trendline_mode   = _ps("ps_trendline_mode")
     else:
-        x_numeric    = _ps("ps_x_numeric")
-        x_suffix     = _ps("ps_x_suffix")
-        error_style  = _ps("ps_error_style")
-        line_width   = _ps("ps_line_width")
-        marker_size  = _ps("ps_marker_size")
-        marker_style = _ps("ps_marker_style")
+        x_numeric       = _ps("ps_x_numeric")
+        x_suffix        = _ps("ps_x_suffix")
+        error_style     = _ps("ps_error_style")
+        line_width      = _ps("ps_line_width")
+        marker_size     = _ps("ps_marker_size")
+        marker_style    = _ps("ps_marker_style")
+        trendline       = _ps("ps_trendline")
+        trendline_source = _ps("ps_trendline_source")
+        trendline_mode  = _ps("ps_trendline_mode")
 
     # ---- Colors -----------------------------------------------------------
     st.header("🎨 Colors")
@@ -596,6 +624,31 @@ with st.sidebar:
             horizontal=True,
         )
         spine_width = st.slider("Border / tick width", 0.3, 3.0, key="ps_spine_width", step=0.1)
+
+        st.caption("Tick marks")
+        tick_direction = st.radio("Direction", ["out", "in", "inout"],
+                                  key="ps_tick_direction", horizontal=True,
+                                  format_func=lambda x: {"out": "Out", "in": "In", "inout": "Both"}[x])
+        col_tl, col_tw = st.columns(2)
+        with col_tl:
+            major_tick_length = st.slider("Major length", 1.0, 12.0, key="ps_major_tick_length", step=0.5)
+        with col_tw:
+            major_tick_width = st.slider("Major width", 0.3, 3.0, key="ps_major_tick_width", step=0.1)
+        col_my, col_mx = st.columns(2)
+        with col_my:
+            minor_ticks_y = st.number_input("Minor ticks / interval (Y)", min_value=0, max_value=9,
+                                            key="ps_minor_ticks_y", step=1)
+        with col_mx:
+            _mx_disabled = not (_base_type == "line" and _ps("ps_x_numeric"))
+            minor_ticks_x = st.number_input("Minor ticks / interval (X)", min_value=0, max_value=9,
+                                            key="ps_minor_ticks_x", step=1,
+                                            disabled=_mx_disabled,
+                                            help="Only available for line plots with numeric x-axis.")
+        col_sl, col_sw = st.columns(2)
+        with col_sl:
+            minor_tick_length = st.slider("Minor length", 1.0, 8.0, key="ps_minor_tick_length", step=0.5)
+        with col_sw:
+            minor_tick_width = st.slider("Minor width", 0.3, 2.0, key="ps_minor_tick_width", step=0.1)
 
         st.caption("Axis limits (leave blank for auto)")
         col_y1, col_y2 = st.columns(2)
@@ -850,6 +903,16 @@ fig = plotter.make_figure(
     marker_style=marker_style,
     marker_size=marker_size,
     x_suffix=x_suffix,
+    trendline=trendline,
+    trendline_source=trendline_source,
+    trendline_mode=trendline_mode,
+    tick_direction=_ps("ps_tick_direction"),
+    major_tick_length=_ps("ps_major_tick_length"),
+    major_tick_width=_ps("ps_major_tick_width"),
+    minor_ticks_y=int(_ps("ps_minor_ticks_y")),
+    minor_ticks_x=int(_ps("ps_minor_ticks_x")),
+    minor_tick_length=_ps("ps_minor_tick_length"),
+    minor_tick_width=_ps("ps_minor_tick_width"),
     stat_results=stat_results if _base_type != "line" else None,
     show_ns=show_ns,
     test_mode=test_mode,

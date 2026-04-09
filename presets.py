@@ -52,6 +52,17 @@ DEFAULTS: dict[str, object] = {
     "ps_line_width":       1.5,
     "ps_marker_style":     "o",
     "ps_marker_size":      6.0,
+    "ps_trendline":        "none",
+    "ps_trendline_source": "means",
+    "ps_trendline_mode":   "overlay",
+    # Tick marks
+    "ps_tick_direction":    "out",
+    "ps_major_tick_length": 4.0,
+    "ps_major_tick_width":  0.8,
+    "ps_minor_ticks_y":     0,
+    "ps_minor_ticks_x":     0,
+    "ps_minor_tick_length": 2.0,
+    "ps_minor_tick_width":  0.6,
     # Statistics
     "ps_run_stats":        False,
     "ps_test_mode":        "ttest",

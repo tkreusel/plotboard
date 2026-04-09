@@ -81,6 +81,17 @@ def make_figure(
     marker_style: str = "o",
     marker_size: float = 6.0,
     x_suffix: str = "",            # appended to tick labels when conditions are purely numeric
+    trendline: str = "none",       # "none"|"linear"|"poly2"|"poly3"|"exp"|"log"|"power"|"spline"
+    trendline_source: str = "means",  # "means" | "replicates"
+    trendline_mode: str = "overlay",  # "overlay" | "replace"
+    # Ticks
+    tick_direction: str = "out",      # "in" | "out" | "inout"
+    major_tick_length: float = 4.0,
+    major_tick_width: float = 0.8,
+    minor_ticks_y: int = 0,           # 0 = off, N = N minor ticks per major interval
+    minor_ticks_x: int = 0,           # only applied for line plot with numeric x
+    minor_tick_length: float = 2.0,
+    minor_tick_width: float = 0.6,
     # Stats
     stat_results: pd.DataFrame | None = None,
     show_ns: bool = False,
@@ -227,7 +238,9 @@ def make_figure(
             grp = df[df["treatment"] == treatment]
             means: list[float] = []
             errs: list[float] = []
-            for cond in conditions:
+            all_pts_x: list[float] = []
+            all_pts_y: list[float] = []
+            for j, cond in enumerate(conditions):
                 vals = grp[grp["condition"] == cond]["value"].dropna().values
                 n = len(vals)
                 if n == 0:
@@ -243,17 +256,23 @@ def make_figure(
                                  "ci95": 1.96 * sd / np.sqrt(n)}.get(error_bar, sd))
                 else:
                     errs.append(float("nan"))
+                # Collect replicate positions for trendline_source="replicates"
+                all_pts_x.extend([x_vals[j]] * n)
+                all_pts_y.extend(vals.tolist())
 
             m_arr = np.array(means)
             e_arr = np.array(errs)
+            xv = np.array(x_vals)
 
-            ax.plot(x_vals, m_arr, color=color, linewidth=line_width,
-                    marker=marker_style if marker_style != "none" else None,
-                    markersize=marker_size, label=treatment, zorder=3)
+            # Connected-means line (skipped in "replace" mode when trendline active)
+            if trendline == "none" or trendline_mode == "overlay":
+                ax.plot(xv, m_arr, color=color, linewidth=line_width,
+                        marker=marker_style if marker_style != "none" else None,
+                        markersize=marker_size, zorder=3)
 
+            # Error band / bars
             valid = ~np.isnan(e_arr) & ~np.isnan(m_arr)
             if valid.any():
-                xv = np.array(x_vals)
                 if error_style == "band":
                     ax.fill_between(xv[valid], (m_arr - e_arr)[valid], (m_arr + e_arr)[valid],
                                     color=color, alpha=0.15, zorder=2)
@@ -262,6 +281,7 @@ def make_figure(
                                 fmt="none", ecolor=color,
                                 capsize=cap_size * 80, elinewidth=0.8, zorder=2)
 
+            # Individual points
             if show_points:
                 for j, cond in enumerate(conditions):
                     pts = grp[grp["condition"] == cond]["value"].dropna().values
@@ -269,29 +289,48 @@ def make_figure(
                                color=color, s=(point_size ** 2) * 0.5,
                                alpha=point_alpha, zorder=4, linewidths=0.3)
 
+            # Trend line
+            if trendline != "none":
+                if trendline_source == "replicates" and len(all_pts_x) >= 2:
+                    tx = np.array(all_pts_x, dtype=float)
+                    ty = np.array(all_pts_y, dtype=float)
+                else:
+                    valid_m = ~np.isnan(m_arr)
+                    tx = xv[valid_m]
+                    ty = m_arr[valid_m]
+                result = _fit_trend(tx, ty, trendline)
+                if result is not None:
+                    x_dense, y_dense = result
+                    ax.plot(x_dense, y_dense, color=color,
+                            linewidth=line_width + 0.5, linestyle="--",
+                            zorder=5)
+
         # ---- X ticks -------------------------------------------------------
         ax.set_xticks(x_vals)
         ax.set_xticklabels(_tick_labels, rotation=tick_rotation,
                            fontsize=_tick_fs, ha="right" if tick_rotation > 0 else "center")
 
-        # ---- Legend (from ax.plot labels) ----------------------------------
+        # ---- Legend — filled rectangles (Patch), consistent with bar plots --
         if show_legend:
             leg_kw = (dict(loc="upper right", bbox_to_anchor=(0.98, 0.98), borderaxespad=0)
                       if legend_inside else
                       dict(loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0))
-            ax.legend(title=legend_title, frameon=False,
+            _patch_handles = [
+                mpatches.Patch(facecolor=palette[i % len(palette)], label=t)
+                for i, t in enumerate(treatments)
+            ]
+            ax.legend(_patch_handles, treatments, title=legend_title, frameon=False,
                       fontsize=fs["legend_fs"], title_fontsize=fs["legend_title_fs"],
                       **leg_kw)
         else:
             ax.legend_.remove() if ax.get_legend() else None
 
-        # ---- Axes styling (line-specific, then fall through) ---------------
+        # ---- Axes styling --------------------------------------------------
         if log_scale:
             ax.set_yscale("log")
         ax.set_title(title, fontsize=fs["title_fs"], pad=10)
         ax.set_xlabel(xlabel, fontsize=fs["axis_label_fs"], labelpad=6)
         ax.set_ylabel(ylabel, fontsize=fs["axis_label_fs"], labelpad=6)
-        ax.tick_params(axis="y", labelsize=_tick_fs)
         if spines == "open":
             sns.despine(ax=ax, top=True, right=True)
         elif spines == "none":
@@ -301,8 +340,24 @@ def make_figure(
             sns.despine(ax=ax, top=False, right=False)
         for spine in ax.spines.values():
             spine.set_linewidth(spine_width)
-        ax.tick_params(width=spine_width)
         _apply_y_format(ax, y_format)
+
+        # ---- Tick marks — after despine; explicitly enable bottom/left -----
+        ax.tick_params(axis="x", which="major", labelsize=_tick_fs,
+                       direction=tick_direction, length=major_tick_length, width=major_tick_width,
+                       bottom=True)
+        ax.tick_params(axis="y", which="major", labelsize=_tick_fs,
+                       direction=tick_direction, length=major_tick_length, width=major_tick_width,
+                       left=True)
+        if minor_ticks_y > 0:
+            ax.yaxis.set_minor_locator(mticker.AutoMinorLocator(minor_ticks_y + 1))
+            ax.tick_params(axis="y", which="minor", direction=tick_direction,
+                           length=minor_tick_length, width=minor_tick_width, left=True)
+        if minor_ticks_x > 0 and x_numeric and _all_numeric:
+            ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(minor_ticks_x + 1))
+            ax.tick_params(axis="x", which="minor", direction=tick_direction,
+                           length=minor_tick_length, width=minor_tick_width, bottom=True)
+
         if ylim is not None:
             lo, hi = ylim
             cur_lo, cur_hi = ax.get_ylim()
@@ -372,9 +427,6 @@ def make_figure(
     ax.set_title(title, fontsize=fs["title_fs"], pad=10)
     ax.set_xlabel(xlabel, fontsize=fs["axis_label_fs"], labelpad=6)
     ax.set_ylabel(ylabel, fontsize=fs["axis_label_fs"], labelpad=6)
-    ax.tick_params(axis="x", rotation=tick_rotation, labelsize=_tick_fs)
-    ax.tick_params(axis="y", labelsize=_tick_fs)
-
     # Spines
     if spines == "open":
         sns.despine(ax=ax, top=True, right=True)
@@ -386,10 +438,22 @@ def make_figure(
 
     for spine in ax.spines.values():
         spine.set_linewidth(spine_width)
-    ax.tick_params(width=spine_width)
 
     # Y-axis number format
     _apply_y_format(ax, y_format)
+
+    # Tick marks — after despine; explicitly enable bottom/left so seaborn's
+    # "white" style (which sets xtick.bottom/ytick.left=False) doesn't hide them.
+    ax.tick_params(axis="x", which="major", rotation=tick_rotation, labelsize=_tick_fs,
+                   direction=tick_direction, length=major_tick_length, width=major_tick_width,
+                   bottom=True)
+    ax.tick_params(axis="y", which="major", labelsize=_tick_fs,
+                   direction=tick_direction, length=major_tick_length, width=major_tick_width,
+                   left=True)
+    if minor_ticks_y > 0:
+        ax.yaxis.set_minor_locator(mticker.AutoMinorLocator(minor_ticks_y + 1))
+        ax.tick_params(axis="y", which="minor", direction=tick_direction,
+                       length=minor_tick_length, width=minor_tick_width, left=True)
 
     # ------------------------------------------------------------------
     # Statistical annotations
@@ -433,6 +497,47 @@ def make_figure(
 
 def _errorbar_arg(error_bar: str):
     return {"sd": ("sd", 1), "sem": ("se", 1), "ci95": ("ci", 95)}.get(error_bar, ("sd", 1))
+
+
+def _fit_trend(
+    x_fit: np.ndarray,
+    y_fit: np.ndarray,
+    kind: str,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Return (x_dense, y_dense) for a smooth trend curve, or None on failure."""
+    from scipy.interpolate import make_smoothing_spline
+
+    if len(x_fit) < 2:
+        return None
+    try:
+        x_dense = np.linspace(float(x_fit.min()), float(x_fit.max()), 200)
+        if kind in ("linear", "poly2", "poly3"):
+            deg = {"linear": 1, "poly2": 2, "poly3": 3}[kind]
+            coeffs = np.polyfit(x_fit, y_fit, deg)
+            y_dense = np.polyval(coeffs, x_dense)
+        elif kind == "exp":
+            if np.any(y_fit <= 0):
+                return None
+            coeffs = np.polyfit(x_fit, np.log(y_fit), 1)
+            y_dense = np.exp(np.polyval(coeffs, x_dense))
+        elif kind == "log":
+            if np.any(x_fit <= 0):
+                return None
+            coeffs = np.polyfit(np.log(x_fit), y_fit, 1)
+            y_dense = np.polyval(coeffs, np.log(x_dense))
+        elif kind == "power":
+            if np.any(x_fit <= 0) or np.any(y_fit <= 0):
+                return None
+            coeffs = np.polyfit(np.log(x_fit), np.log(y_fit), 1)
+            y_dense = np.exp(np.polyval(coeffs, np.log(x_dense)))
+        elif kind == "spline":
+            spl = make_smoothing_spline(x_fit, y_fit)
+            y_dense = spl(x_dense)
+        else:
+            return None
+        return x_dense, y_dense
+    except Exception:
+        return None
 
 
 def _apply_y_format(ax, y_format: str) -> None:
