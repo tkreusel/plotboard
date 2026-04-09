@@ -387,6 +387,11 @@ with st.sidebar:
                                 help="Auto-detected from condition labels. Uncheck to use equal spacing.")
         x_suffix = st.text_input("X-axis unit suffix (appended to pure-number labels)",
                                  key="ps_x_suffix", placeholder="e.g.  h  or  nM")
+        x_tick_interval = st.number_input(
+            "X major tick interval (0 = auto)", min_value=0.0,
+            key="ps_x_tick_interval", step=1.0,
+            help="Set to 0 to let matplotlib choose automatically.",
+        )
         error_style = st.radio("Error style", ["band", "bars"], key="ps_error_style",
                                format_func=lambda x: {"band": "Shaded band", "bars": "Error bars"}[x],
                                horizontal=True)
@@ -429,8 +434,9 @@ with st.sidebar:
             trendline_source = _ps("ps_trendline_source")
             trendline_mode   = _ps("ps_trendline_mode")
     else:
-        x_numeric       = _ps("ps_x_numeric")
-        x_suffix        = _ps("ps_x_suffix")
+        x_numeric        = _ps("ps_x_numeric")
+        x_suffix         = _ps("ps_x_suffix")
+        x_tick_interval  = _ps("ps_x_tick_interval")
         error_style     = _ps("ps_error_style")
         line_width      = _ps("ps_line_width")
         marker_size     = _ps("ps_marker_size")
@@ -898,6 +904,7 @@ fig = plotter.make_figure(
     ylim=ylim,
     xlim=xlim,
     x_numeric=x_numeric,
+    x_tick_interval=x_tick_interval,
     error_style=error_style,
     line_width=line_width,
     marker_style=marker_style,

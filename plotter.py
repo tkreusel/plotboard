@@ -76,6 +76,7 @@ def make_figure(
     xlim: tuple | None = None,
     # Line plot
     x_numeric: bool = False,       # True → proportional x spacing from numeric condition labels
+    x_tick_interval: float = 0.0,  # 0 = auto; >0 → MultipleLocator(x_tick_interval)
     error_style: str = "band",     # "band" | "bars"
     line_width: float = 1.5,
     marker_style: str = "o",
@@ -306,9 +307,26 @@ def make_figure(
                             zorder=5)
 
         # ---- X ticks -------------------------------------------------------
-        ax.set_xticks(x_vals)
-        ax.set_xticklabels(_tick_labels, rotation=tick_rotation,
-                           fontsize=_tick_fs, ha="right" if tick_rotation > 0 else "center")
+        if x_numeric and _all_numeric:
+            # Continuous axis — let matplotlib auto-place major ticks so that:
+            # - ticks appear at nice intervals across the full range (not just at data positions)
+            # - default xlim rounds to nice numbers below/above the data range
+            # Apply suffix (if any) via formatter on the auto-generated labels.
+            if x_tick_interval and x_tick_interval > 0:
+                ax.xaxis.set_major_locator(mticker.MultipleLocator(x_tick_interval))
+            if x_suffix:
+                ax.xaxis.set_major_formatter(
+                    mticker.FuncFormatter(lambda v, _: f"{v:g}{x_suffix}")
+                )
+            ax.tick_params(axis="x", which="major", rotation=tick_rotation, labelsize=_tick_fs)
+            if tick_rotation > 0:
+                for lbl in ax.get_xticklabels():
+                    lbl.set_ha("right")
+        else:
+            # Categorical spacing — force ticks at the data positions with their string labels
+            ax.set_xticks(x_vals)
+            ax.set_xticklabels(_tick_labels, rotation=tick_rotation,
+                               fontsize=_tick_fs, ha="right" if tick_rotation > 0 else "center")
 
         # ---- Legend — filled rectangles (Patch), consistent with bar plots --
         if show_legend:
@@ -358,6 +376,7 @@ def make_figure(
             ax.tick_params(axis="x", which="minor", direction=tick_direction,
                            length=minor_tick_length, width=minor_tick_width, bottom=True)
 
+        fig.tight_layout()
         if ylim is not None:
             lo, hi = ylim
             cur_lo, cur_hi = ax.get_ylim()
@@ -368,7 +387,6 @@ def make_figure(
             cur_lo, cur_hi = ax.get_xlim()
             ax.set_xlim(lo if lo is not None else cur_lo,
                         hi if hi is not None else cur_hi)
-        fig.tight_layout()
         return fig
 
     else:
@@ -474,8 +492,9 @@ def make_figure(
         )
 
     # ------------------------------------------------------------------
-    # Axis limits (applied last — overrides bracket expansion)
+    # Axis limits — applied after tight_layout so it cannot re-expand them
     # ------------------------------------------------------------------
+    fig.tight_layout()
     if ylim is not None:
         lo, hi = ylim
         cur_lo, cur_hi = ax.get_ylim()
@@ -486,8 +505,6 @@ def make_figure(
         cur_lo, cur_hi = ax.get_xlim()
         ax.set_xlim(lo if lo is not None else cur_lo,
                     hi if hi is not None else cur_hi)
-
-    fig.tight_layout()
     return fig
 
 
