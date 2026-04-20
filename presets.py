@@ -49,6 +49,7 @@ DEFAULTS: dict[str, object] = {
     "ps_x_numeric":        False,
     "ps_x_suffix":         "",
     "ps_x_tick_interval":  0.0,
+    "ps_y_tick_interval":  0.0,
     "ps_error_style":      "band",
     "ps_line_width":       1.5,
     "ps_marker_style":     "o",

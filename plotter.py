@@ -77,12 +77,13 @@ def make_figure(
     # Line plot
     x_numeric: bool = False,       # True → proportional x spacing from numeric condition labels
     x_tick_interval: float = 0.0,  # 0 = auto; >0 → MultipleLocator(x_tick_interval)
+    y_tick_interval: float = 0.0,  # 0 = auto; >0 → MultipleLocator(y_tick_interval)
     error_style: str = "band",     # "band" | "bars"
     line_width: float = 1.5,
     marker_style: str = "o",
     marker_size: float = 6.0,
     x_suffix: str = "",            # appended to tick labels when conditions are purely numeric
-    trendline: str = "none",       # "none"|"linear"|"poly2"|"poly3"|"exp"|"log"|"power"|"spline"
+    trendline: str = "none",       # "none"|"smooth"|"linear"|"poly2"|"poly3"|"exp"|"log"|"power"|"spline"
     trendline_source: str = "means",  # "means" | "replicates"
     trendline_mode: str = "overlay",  # "overlay" | "replace"
     # Ticks
@@ -143,7 +144,11 @@ def make_figure(
     color_map = {t: palette[i % len(palette)] for i, t in enumerate(treatments)}
 
     if log_scale and df["value"].min() <= 0:
-        log_scale = False
+        df = df[df["value"] > 0].copy()
+        if hasattr(df["condition"], "cat"):
+            df["condition"] = df["condition"].cat.remove_unused_categories()
+        if hasattr(df["treatment"], "cat"):
+            df["treatment"] = df["treatment"].cat.remove_unused_categories()
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
@@ -266,10 +271,15 @@ def make_figure(
             xv = np.array(x_vals)
 
             # Connected-means line (skipped in "replace" mode when trendline active)
-            if trendline == "none" or trendline_mode == "overlay":
+            # Markers are always drawn so they remain visible even when the line is replaced.
+            _draw_line = trendline == "none" or trendline_mode == "overlay"
+            _marker = marker_style if marker_style != "none" else None
+            if _draw_line:
                 ax.plot(xv, m_arr, color=color, linewidth=line_width,
-                        marker=marker_style if marker_style != "none" else None,
-                        markersize=marker_size, zorder=3)
+                        marker=_marker, markersize=marker_size, zorder=3)
+            elif _marker:
+                ax.plot(xv, m_arr, color=color, linewidth=0,
+                        marker=_marker, markersize=marker_size, zorder=3)
 
             # Error band / bars
             valid = ~np.isnan(e_arr) & ~np.isnan(m_arr)
@@ -359,6 +369,8 @@ def make_figure(
         for spine in ax.spines.values():
             spine.set_linewidth(spine_width)
         _apply_y_format(ax, y_format)
+        if y_tick_interval and y_tick_interval > 0:
+            _safe_set_y_locator(ax, y_tick_interval)
 
         # ---- Tick marks — after despine; explicitly enable bottom/left -----
         ax.tick_params(axis="x", which="major", labelsize=_tick_fs,
@@ -460,6 +472,9 @@ def make_figure(
     # Y-axis number format
     _apply_y_format(ax, y_format)
 
+    if y_tick_interval and y_tick_interval > 0:
+        _safe_set_y_locator(ax, y_tick_interval)
+
     # Tick marks — after despine; explicitly enable bottom/left so seaborn's
     # "white" style (which sets xtick.bottom/ytick.left=False) doesn't hide them.
     ax.tick_params(axis="x", which="major", rotation=tick_rotation, labelsize=_tick_fs,
@@ -516,6 +531,16 @@ def _errorbar_arg(error_bar: str):
     return {"sd": ("sd", 1), "sem": ("se", 1), "ci95": ("ci", 95)}.get(error_bar, ("sd", 1))
 
 
+def _safe_set_y_locator(ax, interval: float, max_ticks: int = 100) -> None:
+    """Apply MultipleLocator(interval) to the y-axis only if it produces a
+    reasonable number of ticks.  Prevents matplotlib from hanging when the
+    interval is small relative to the axis range (e.g. interval=1 on 0–50000)."""
+    lo, hi = ax.get_ylim()
+    if interval <= 0 or (hi - lo) / interval > max_ticks:
+        return
+    ax.yaxis.set_major_locator(mticker.MultipleLocator(interval))
+
+
 def _fit_trend(
     x_fit: np.ndarray,
     y_fit: np.ndarray,
@@ -549,6 +574,17 @@ def _fit_trend(
             y_dense = np.exp(np.polyval(coeffs, np.log(x_dense)))
         elif kind == "spline":
             spl = make_smoothing_spline(x_fit, y_fit)
+            y_dense = spl(x_dense)
+        elif kind == "smooth":
+            from scipy.interpolate import CubicSpline
+            # Sort by x and deduplicate (average y for identical x) before interpolating
+            sort_idx = np.argsort(x_fit)
+            xs, ys = x_fit[sort_idx], y_fit[sort_idx]
+            unique_x, inv = np.unique(xs, return_inverse=True)
+            unique_y = np.array([ys[inv == i].mean() for i in range(len(unique_x))])
+            if len(unique_x) < 2:
+                return None
+            spl = CubicSpline(unique_x, unique_y)
             y_dense = spl(x_dense)
         else:
             return None

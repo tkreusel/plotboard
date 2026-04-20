@@ -68,7 +68,7 @@ def _get_sheet_names(file_bytes: bytes) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar — file loading
+# Sidebar — file loading (stays above tabs; drives st.stop())
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
@@ -128,107 +128,578 @@ if file_bytes is None:
     st.stop()
 
 # ---------------------------------------------------------------------------
-# Sheet selection
+# Pre-load data using session-state for sheet (allows tabs to render with
+# conditions/treatments known before widgets in tab_data update them).
 # ---------------------------------------------------------------------------
 
-with st.sidebar:
-    all_sheets = _get_sheet_names(file_bytes)
-    sheet = st.selectbox("Sheet", all_sheets)
+all_sheets = _get_sheet_names(file_bytes)
+_cur_sheet = st.session_state.get("_sheet_select", all_sheets[0])
+if _cur_sheet not in all_sheets:
+    _cur_sheet = all_sheets[0]
 
-df = _load_sheet(file_bytes, sheet)
+df = _load_sheet(file_bytes, _cur_sheet)
 
 if df.empty:
     st.warning(
-        f"Sheet **{sheet}** contains no parseable numeric data. "
+        f"Sheet **{_cur_sheet}** contains no parseable numeric data. "
         "Try a different sheet, or check that the file uses the expected layout."
     )
     st.stop()
 
-conditions = list(df["condition"].cat.categories) if hasattr(df["condition"], "cat") else list(df["condition"].unique())
-treatments = list(df["treatment"].cat.categories) if hasattr(df["treatment"], "cat") else list(df["treatment"].unique())
+conditions = (
+    list(df["condition"].cat.categories)
+    if hasattr(df["condition"], "cat")
+    else list(df["condition"].unique())
+)
+treatments = (
+    list(df["treatment"].cat.categories)
+    if hasattr(df["treatment"], "cat")
+    else list(df["treatment"].unique())
+)
+n_treatments = len(treatments)
+
+# When the sheet changes: reset the filter to all conditions, then rerun so
+# that session-state values are all from a *prior* run when widgets next render.
+# This follows the same pattern as the _active_file / startup-preset rerun and
+# prevents the slider-initialization quirk (set-in-same-run → min_value display)
+# as well as the radio jumping to its first option.
+_sel_cond_key = "filter_conditions"
+_prev_sheet_key = "_prev_loaded_sheet"
+if st.session_state.get(_prev_sheet_key) != _cur_sheet:
+    st.session_state[_sel_cond_key] = list(conditions)
+    st.session_state[_prev_sheet_key] = _cur_sheet
+    st.rerun()
+
+# Ensure filter selection only contains conditions valid for this sheet.
+_cur_filter = st.session_state.get(_sel_cond_key, list(conditions))
+_cur_filter = [c for c in _cur_filter if c in conditions] or list(conditions)
+st.session_state[_sel_cond_key] = _cur_filter
+
+# Initialise stat variables before the sidebar tabs so main-area code can
+# reference them regardless of which tab the user has open.
+stat_results: pd.DataFrame | None = None
+stat_results_all: pd.DataFrame | None = None
+anova_table: pd.DataFrame | None = None
 
 # ---------------------------------------------------------------------------
-# Sidebar — presets
+# Sidebar — tabbed configuration
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    with st.expander("💾 Presets", expanded=False):
-        saved = xpresets.list_presets()
-        startup_preset = xpresets.get_startup_preset()
+    tab_data, tab_plot, tab_style, tab_stats = st.tabs(["Data", "Plot", "Style", "Stats"])
 
-        # -- Load ------------------------------------------------------------
-        if saved:
-            # Mark the current startup preset with a star in the dropdown
-            def _preset_label(name: str) -> str:
-                return f"★ {name}" if name == startup_preset else name
+    # =========================================================
+    # TAB: Data — sheet, filter, reorder, presets, preview
+    # =========================================================
+    with tab_data:
+        sheet = st.selectbox(
+            "Sheet",
+            all_sheets,
+            index=all_sheets.index(_cur_sheet),
+            key="_sheet_select",
+        )
 
-            col_ps, col_pl = st.columns([3, 1])
-            with col_ps:
-                preset_choice = st.selectbox(
-                    "Saved presets", saved, label_visibility="collapsed",
-                    format_func=_preset_label,
+        st.caption("Filter")
+        selected_conditions = st.multiselect(
+            "Show conditions",
+            options=conditions,
+            key=_sel_cond_key,
+            label_visibility="collapsed",
+        )
+
+        with st.expander("↕ Reorder", expanded=False):
+            st.caption("Change the order number to reorder items in the plot.")
+            reorder_col1, reorder_col2 = st.columns(2)
+
+            with reorder_col1:
+                st.caption("Conditions (x-axis)")
+                cond_order_df = pd.DataFrame({
+                    "Condition": conditions,
+                    "Order": list(range(1, len(conditions) + 1)),
+                })
+                edited_cond_order = st.data_editor(
+                    cond_order_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Condition": st.column_config.TextColumn(disabled=True),
+                        "Order": st.column_config.NumberColumn(min_value=1, step=1),
+                    },
+                    key="cond_order_editor",
                 )
-            with col_pl:
-                if st.button("Load", use_container_width=True):
-                    loaded = xpresets.load(preset_choice)
-                    st.session_state.update(loaded)
-                    # Restore custom color picker keys
-                    for _i, _c in enumerate(loaded.get("ps_custom_colors", [])):
-                        if _c:
-                            st.session_state[f"cp_{_i}"] = _c
-                    st.toast(f"Loaded preset '{preset_choice}'", icon="✅")
-                    st.rerun()
+                conditions = (
+                    edited_cond_order.sort_values("Order", kind="stable")["Condition"]
+                    .tolist()
+                )
 
-            col_startup, col_del = st.columns(2)
-            with col_startup:
-                if st.button("⭐ Set as startup", use_container_width=True,
-                             help="Load this preset automatically when a file is opened."):
-                    xpresets.set_startup_preset(preset_choice)
-                    st.toast(f"'{preset_choice}' will load on startup", icon="⭐")
-            with col_del:
-                if st.button(f"🗑 Delete", use_container_width=True):
-                    xpresets.delete(preset_choice)
-                    st.toast(f"Deleted preset '{preset_choice}'", icon="🗑")
-                    st.rerun()
-        else:
-            st.caption("No saved presets yet.")
+            with reorder_col2:
+                st.caption("Treatments (legend)")
+                treat_order_df = pd.DataFrame({
+                    "Treatment": treatments,
+                    "Order": list(range(1, len(treatments) + 1)),
+                })
+                edited_treat_order = st.data_editor(
+                    treat_order_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Treatment": st.column_config.TextColumn(disabled=True),
+                        "Order": st.column_config.NumberColumn(min_value=1, step=1),
+                    },
+                    key="treat_order_editor",
+                )
+                treatments = (
+                    edited_treat_order.sort_values("Order", kind="stable")["Treatment"]
+                    .tolist()
+                )
+
+        with st.expander("💾 Presets", expanded=False):
+            saved = xpresets.list_presets()
+            startup_preset = xpresets.get_startup_preset()
+
+            if saved:
+                def _preset_label(name: str) -> str:
+                    return f"★ {name}" if name == startup_preset else name
+
+                col_ps, col_pl = st.columns([3, 1])
+                with col_ps:
+                    preset_choice = st.selectbox(
+                        "Saved presets", saved, label_visibility="collapsed",
+                        format_func=_preset_label,
+                    )
+                with col_pl:
+                    if st.button("Load", use_container_width=True):
+                        loaded = xpresets.load(preset_choice)
+                        st.session_state.update(loaded)
+                        for _i, _c in enumerate(loaded.get("ps_custom_colors", [])):
+                            if _c:
+                                st.session_state[f"cp_{_i}"] = _c
+                        st.toast(f"Loaded preset '{preset_choice}'", icon="✅")
+                        st.rerun()
+
+                col_startup, col_del = st.columns(2)
+                with col_startup:
+                    if st.button("⭐ Set as startup", use_container_width=True,
+                                 help="Load this preset automatically when a file is opened."):
+                        xpresets.set_startup_preset(preset_choice)
+                        st.toast(f"'{preset_choice}' will load on startup", icon="⭐")
+                with col_del:
+                    if st.button("🗑 Delete", use_container_width=True):
+                        xpresets.delete(preset_choice)
+                        st.toast(f"Deleted preset '{preset_choice}'", icon="🗑")
+                        st.rerun()
+            else:
+                st.caption("No saved presets yet.")
+
+            st.divider()
+
+            col_sn, col_sb = st.columns([3, 1])
+            with col_sn:
+                new_preset_name = st.text_input(
+                    "Preset name", placeholder="e.g. Publication style",
+                    label_visibility="collapsed",
+                )
+            with col_sb:
+                if st.button("Save", use_container_width=True):
+                    if new_preset_name.strip():
+                        settings = {k: st.session_state[k] for k in xpresets.DEFAULTS}
+                        if st.session_state.get("ps_palette_name") == "Custom":
+                            settings["ps_custom_colors"] = [
+                                st.session_state.get(f"cp_{_i}", "")
+                                for _i in range(len(treatments))
+                            ]
+                        xpresets.save(new_preset_name.strip(), settings)
+                        st.toast(f"Saved preset '{new_preset_name.strip()}'", icon="💾")
+                        st.rerun()
+                    else:
+                        st.warning("Enter a name first.")
+
+        show_preview = st.checkbox("Show / edit labels & raw data", value=False)
+
+    # =========================================================
+    # TAB: Plot — plot type, y-axis, labels, line options
+    # =========================================================
+    with tab_plot:
+        plot_type = st.radio(
+            "Plot type",
+            ["bar+strip", "box+strip", "violin+strip", "line+scatter"],
+            key="ps_plot_type",
+            label_visibility="collapsed",
+        )
+        _base_type = plot_type.split("+")[0]
 
         st.divider()
+        st.caption("Y-axis")
+        log_scale_req = st.checkbox("Log scale", key="ps_log_scale")
+        log_scale = log_scale_req
+        if log_scale_req and df["value"].min() <= 0:
+            st.info("Zero/negative values will be excluded from the log-scale plot.")
 
-        # -- Save ------------------------------------------------------------
-        col_sn, col_sb = st.columns([3, 1])
-        with col_sn:
-            new_preset_name = st.text_input(
-                "Preset name", placeholder="e.g. Publication style",
-                label_visibility="collapsed",
+        show_grid = st.checkbox("Y-axis gridlines", key="ps_show_grid")
+
+        if _base_type in ("bar", "line"):
+            col_eb, col_cap = st.columns(2)
+            with col_eb:
+                error_bar = st.radio(
+                    "Error bar",
+                    ["sd", "sem", "ci95"],
+                    key="ps_error_bar",
+                    format_func=lambda x: {"sd": "SD", "sem": "SEM", "ci95": "95 % CI"}[x],
+                )
+            with col_cap:
+                cap_size = st.slider("Cap size", 0.0, 0.3, key="ps_cap_size", step=0.01)
+        else:
+            error_bar = "sd"
+            cap_size = 0.08
+
+        show_points = st.checkbox("Show individual data points", key="ps_show_points")
+        if show_points:
+            col_ps2, col_pa = st.columns(2)
+            with col_ps2:
+                point_size = st.slider("Dot size", 1.0, 12.0, key="ps_point_size", step=0.5)
+            with col_pa:
+                point_alpha = st.slider("Dot opacity", 0.1, 1.0, key="ps_point_alpha", step=0.05)
+        else:
+            point_size = _ps("ps_point_size")
+            point_alpha = _ps("ps_point_alpha")
+
+        st.divider()
+        st.caption("Labels")
+        default_title = f"{file_label}  ·  {sheet}" if file_label else sheet
+        # Title is intentionally NOT preset-keyed — it's file/sheet specific.
+        title = st.text_input("Title", value=default_title)
+        xlabel = st.text_input("X-axis label", key="ps_xlabel")
+        # ylabel defaults to the sheet name on first load; preset overrides after that.
+        if "ps_ylabel" not in st.session_state or st.session_state["ps_ylabel"] == "":
+            st.session_state["ps_ylabel"] = sheet
+        ylabel    = st.text_input("Y-axis label", key="ps_ylabel")
+        leg_title = st.text_input("Legend title", key="ps_leg_title")
+        col_sl, col_li = st.columns(2)
+        with col_sl:
+            show_legend = st.checkbox("Show legend", key="ps_show_legend")
+        with col_li:
+            legend_inside = st.checkbox("Legend inside", key="ps_legend_inside")
+
+        # Line options — only shown for line plots
+        if _base_type == "line":
+            st.divider()
+            import re as _re
+            _NUM_RE = _re.compile(r"^\s*[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?")
+            _auto_numeric = all(_NUM_RE.match(str(c)) for c in conditions)
+            if "ps_x_numeric" not in st.session_state:
+                st.session_state["ps_x_numeric"] = _auto_numeric
+            st.caption("Line options")
+            x_numeric = st.checkbox("Numeric x-axis (proportional spacing)",
+                                    key="ps_x_numeric",
+                                    help="Auto-detected from condition labels. Uncheck to use equal spacing.")
+            x_suffix = st.text_input("X-axis unit suffix (appended to pure-number labels)",
+                                     key="ps_x_suffix", placeholder="e.g.  h  or  nM")
+            col_xti, col_yti = st.columns(2)
+            with col_xti:
+                x_tick_interval = st.number_input(
+                    "X tick interval (0 = auto)", min_value=0.0,
+                    key="ps_x_tick_interval", step=1.0,
+                )
+            with col_yti:
+                y_tick_interval = st.number_input(
+                    "Y tick interval (0 = auto)", min_value=0.0,
+                    key="ps_y_tick_interval", step=1.0,
+                )
+            error_style = st.radio("Error style", ["band", "bars"], key="ps_error_style",
+                                   format_func=lambda x: {"band": "Shaded band", "bars": "Error bars"}[x],
+                                   horizontal=True)
+            col_lw, col_ms = st.columns(2)
+            with col_lw:
+                line_width = st.slider("Line width", 0.5, 4.0, key="ps_line_width", step=0.1)
+            with col_ms:
+                marker_size = st.slider("Marker size", 2.0, 14.0, key="ps_marker_size", step=0.5)
+            marker_style = st.selectbox(
+                "Marker",
+                ["o", "s", "^", "D", "x", "v", "P", "none"],
+                key="ps_marker_style",
+                format_func=lambda x: {"o": "● Circle", "s": "■ Square", "^": "▲ Triangle up",
+                                       "D": "◆ Diamond", "x": "✕ Cross", "v": "▼ Triangle down",
+                                       "P": "✚ Plus (filled)", "none": "No marker"}[x],
             )
-        with col_sb:
-            if st.button("Save", use_container_width=True):
-                if new_preset_name.strip():
-                    settings = {k: st.session_state[k] for k in xpresets.DEFAULTS}
-                    # Capture custom color picker values if palette is Custom
-                    if st.session_state.get("ps_palette_name") == "Custom":
-                        settings["ps_custom_colors"] = [
-                            st.session_state.get(f"cp_{_i}", "")
-                            for _i in range(len(treatments))
-                        ]
-                    xpresets.save(new_preset_name.strip(), settings)
-                    st.toast(f"Saved preset '{new_preset_name.strip()}'", icon="💾")
-                    st.rerun()
-                else:
-                    st.warning("Enter a name first.")
+            st.caption("Trend line")
+            trendline = st.selectbox(
+                "Fit type",
+                ["none", "smooth", "linear", "poly2", "poly3", "exp", "log", "power", "spline"],
+                key="ps_trendline",
+                format_func=lambda x: {
+                    "none": "None", "smooth": "Smooth (through points)",
+                    "linear": "Linear", "poly2": "Polynomial deg 2",
+                    "poly3": "Polynomial deg 3", "exp": "Exponential",
+                    "log": "Logarithmic", "power": "Power law",
+                    "spline": "Smoothing spline",
+                }[x],
+            )
+            if trendline != "none":
+                col_ts, col_tm = st.columns(2)
+                with col_ts:
+                    trendline_source = st.radio("Fit data", ["means", "replicates"],
+                                                key="ps_trendline_source",
+                                                format_func=lambda x: {"means": "Means", "replicates": "All replicates"}[x])
+                with col_tm:
+                    trendline_mode = st.radio("Mode", ["overlay", "replace"],
+                                              key="ps_trendline_mode",
+                                              format_func=lambda x: {"overlay": "Overlay", "replace": "Replace line"}[x])
+            else:
+                trendline_source = _ps("ps_trendline_source")
+                trendline_mode   = _ps("ps_trendline_mode")
+        else:
+            x_numeric        = _ps("ps_x_numeric")
+            x_suffix         = _ps("ps_x_suffix")
+            x_tick_interval  = _ps("ps_x_tick_interval")
+            y_tick_interval  = _ps("ps_y_tick_interval")
+            error_style      = _ps("ps_error_style")
+            line_width       = _ps("ps_line_width")
+            marker_size      = _ps("ps_marker_size")
+            marker_style     = _ps("ps_marker_style")
+            trendline        = _ps("ps_trendline")
+            trendline_source = _ps("ps_trendline_source")
+            trendline_mode   = _ps("ps_trendline_mode")
+
+    # =========================================================
+    # TAB: Style — colors, figure size, typography, advanced
+    # =========================================================
+    with tab_style:
+        st.caption("Colors")
+        palette_name = st.selectbox("Palette", utils.PALETTE_NAMES, key="ps_palette_name")
+
+        custom_colors: list[str] = []
+        if palette_name == "Custom":
+            st.caption("Pick a color for each treatment:")
+            default_palette = utils.get_palette("iGEM", n_treatments)
+            for i, t in enumerate(treatments):
+                col = st.color_picker(
+                    f"{t}",
+                    value=default_palette[i % len(default_palette)],
+                    key=f"cp_{i}",
+                )
+                custom_colors.append(col)
+            palette = custom_colors
+        else:
+            palette = utils.get_palette(palette_name, n_treatments)
+
+        if _base_type == "bar":
+            col_ew, col_ec = st.columns(2)
+            with col_ew:
+                bar_edge_width = st.slider("Edge width", 0.0, 3.0, key="ps_bar_edge_width", step=0.1)
+            with col_ec:
+                bar_edge_color = st.color_picker("Edge color", key="ps_bar_edge_color")
+            bar_alpha = st.slider("Bar opacity", 0.1, 1.0, key="ps_bar_alpha", step=0.05)
+        else:
+            bar_edge_width = 0.8
+            bar_edge_color = _ps("ps_bar_edge_color")
+            bar_alpha = 1.0
+
+        st.divider()
+        st.caption("Figure size")
+        col_w, col_h = st.columns(2)
+        with col_w:
+            fig_width = st.slider("Width (in)", 6, 20, key="ps_fig_width")
+        with col_h:
+            fig_height = st.slider("Height (in)", 4, 12, key="ps_fig_height")
+        bar_gap = st.slider(
+            "Bar gap", 0.0, 0.8, key="ps_bar_gap", step=0.05,
+            help="Gap between bars within the same condition group.",
+        )
+
+        with st.expander("🔤 Typography", expanded=False):
+            font_family = st.selectbox(
+                "Font family",
+                ["sans-serif", "serif", "monospace"],
+                key="ps_font_family",
+            )
+            font_mode = st.radio(
+                "Font sizing",
+                ["Global scale", "Per element"],
+                key="ps_font_mode",
+                horizontal=True,
+            )
+            fontsizes: dict | None = None
+            font_scale = _ps("ps_font_scale")
+            if font_mode == "Global scale":
+                font_scale = st.slider("Font scale", 0.5, 2.5, key="ps_font_scale", step=0.1)
+            else:
+                col_ft, col_fa = st.columns(2)
+                col_ftk, col_fl = st.columns(2)
+                with col_ft:
+                    fs_title  = st.number_input("Title",       key="ps_fs_title",  min_value=4, max_value=40)
+                with col_fa:
+                    fs_axis   = st.number_input("Axis labels", key="ps_fs_axis",   min_value=4, max_value=40)
+                with col_ftk:
+                    fs_tick   = st.number_input("Tick labels", key="ps_fs_tick",   min_value=4, max_value=40)
+                with col_fl:
+                    fs_legend = st.number_input("Legend",      key="ps_fs_legend", min_value=4, max_value=40)
+                fontsizes = {
+                    "title": fs_title, "axis_label": fs_axis,
+                    "tick":  fs_tick,  "legend":     fs_legend,
+                }
+
+        with st.expander("⚙️ Advanced", expanded=False):
+            y_format = st.selectbox(
+                "Y-axis number format",
+                ["auto", "plain", "sci", "SI"],
+                key="ps_y_format",
+                format_func=lambda x: {
+                    "auto":  "Auto",
+                    "plain": "Plain (no sci notation)",
+                    "sci":   "Scientific (×10ⁿ)",
+                    "SI":    "SI prefix (M, k…)",
+                }[x],
+            )
+
+            col_tr, col_tf = st.columns(2)
+            with col_tr:
+                tick_rotation = st.slider("Tick rotation °", 0, 90, key="ps_tick_rotation")
+            with col_tf:
+                tick_fontsize_adv = st.number_input(
+                    "Tick font size", key="ps_tick_fontsize_adv",
+                    min_value=4, max_value=40,
+                    help="Overrides global/per-element tick setting when changed.",
+                )
+
+            spines = st.radio(
+                "Axis border style",
+                ["open", "all", "none"],
+                key="ps_spines",
+                format_func=lambda x: {"open": "Open (L-shape)", "all": "Full box", "none": "None"}[x],
+                horizontal=True,
+            )
+            spine_width = st.slider("Border / tick width", 0.3, 3.0, key="ps_spine_width", step=0.1)
+
+            st.caption("Tick marks")
+            tick_direction = st.radio("Direction", ["out", "in", "inout"],
+                                      key="ps_tick_direction", horizontal=True,
+                                      format_func=lambda x: {"out": "Out", "in": "In", "inout": "Both"}[x])
+            col_tl, col_tw = st.columns(2)
+            with col_tl:
+                major_tick_length = st.slider("Major length", 1.0, 12.0, key="ps_major_tick_length", step=0.5)
+            with col_tw:
+                major_tick_width = st.slider("Major width", 0.3, 3.0, key="ps_major_tick_width", step=0.1)
+            col_my, col_mx = st.columns(2)
+            with col_my:
+                minor_ticks_y = st.number_input("Minor ticks / interval (Y)", min_value=0, max_value=9,
+                                                key="ps_minor_ticks_y", step=1)
+            with col_mx:
+                _mx_disabled = not (_base_type == "line" and _ps("ps_x_numeric"))
+                minor_ticks_x = st.number_input("Minor ticks / interval (X)", min_value=0, max_value=9,
+                                                key="ps_minor_ticks_x", step=1,
+                                                disabled=_mx_disabled,
+                                                help="Only available for line plots with numeric x-axis.")
+            col_sl, col_sw = st.columns(2)
+            with col_sl:
+                minor_tick_length = st.slider("Minor length", 1.0, 8.0, key="ps_minor_tick_length", step=0.5)
+            with col_sw:
+                minor_tick_width = st.slider("Minor width", 0.3, 2.0, key="ps_minor_tick_width", step=0.1)
+
+            st.caption("Axis limits (leave blank for auto)")
+            col_y1, col_y2 = st.columns(2)
+            with col_y1:
+                ymin_str = st.text_input("Y min", key="ps_ymin_str", placeholder="auto")
+            with col_y2:
+                ymax_str = st.text_input("Y max", key="ps_ymax_str", placeholder="auto")
+            col_x1, col_x2 = st.columns(2)
+            with col_x1:
+                xmin_str = st.text_input("X min", key="ps_xmin_str", placeholder="auto")
+            with col_x2:
+                xmax_str = st.text_input("X max", key="ps_xmax_str", placeholder="auto")
+
+            def _parse_lim(s: str):
+                s = s.strip()
+                if not s:
+                    return None
+                try:
+                    return float(s)
+                except ValueError:
+                    return None
+
+            ylim = (_parse_lim(ymin_str), _parse_lim(ymax_str))
+            xlim = (_parse_lim(xmin_str), _parse_lim(xmax_str))
+            if all(v is None for v in ylim):
+                ylim = None
+            if all(v is None for v in xlim):
+                xlim = None
+
+    # =========================================================
+    # TAB: Stats — statistical tests and bracket styling
+    # =========================================================
+    with tab_stats:
+        if _base_type == "line":
+            st.info("Statistical annotations are not available for line plots.")
+        run_stats = st.checkbox("Run statistical tests", key="ps_run_stats",
+                                disabled=_base_type == "line")
+        test_mode    = _ps("ps_test_mode")
+        compare_axis = _ps("ps_compare_axis")
+        show_ns      = True
+        bracket_linewidth = _ps("ps_bracket_linewidth")
+        bracket_fontsize  = _ps("ps_bracket_fontsize")
+        show_pvalue  = _ps("ps_show_pvalue")
+
+        if run_stats:
+            test_mode = st.radio(
+                "Test",
+                ["ttest", "tukey", "two_way_anova"],
+                key="ps_test_mode",
+                format_func=lambda x: {
+                    "ttest":         "t-test vs reference condition",
+                    "tukey":         "ANOVA + Tukey HSD (all pairs)",
+                    "two_way_anova": "Two-way ANOVA + Sidak",
+                }[x],
+            )
+
+            if test_mode in ("tukey", "two_way_anova"):
+                # "cells" is only valid for two_way_anova; reset if tukey is picked
+                if test_mode == "tukey" and st.session_state.get("ps_compare_axis") == "cells":
+                    st.session_state["ps_compare_axis"] = "conditions"
+                _axis_opts = (["conditions", "treatments", "cells"]
+                              if test_mode == "two_way_anova"
+                              else ["conditions", "treatments"])
+                compare_axis = st.radio(
+                    "Compare",
+                    _axis_opts,
+                    key="ps_compare_axis",
+                    format_func=lambda x: {
+                        "conditions": "Conditions (per treatment)",
+                        "treatments": "Treatments (per condition)",
+                        "cells":      "All cell means — global Sidak",
+                    }[x],
+                    horizontal=True,
+                )
+
+            show_pvalue = st.checkbox("Show p-values instead of stars", key="ps_show_pvalue")
+
+            if test_mode == "ttest":
+                ref_cond = st.selectbox("Reference condition", conditions)
+            else:
+                ref_cond = conditions[0]
+
+            with st.spinner("Running tests…"):
+                try:
+                    if test_mode == "ttest":
+                        stat_results_all = xstats.run_ttests_vs_reference(df, ref_cond)
+                    elif test_mode == "two_way_anova":
+                        anova_table, stat_results_all = xstats.run_two_way_anova_sidak(df, compare_axis)
+                    elif compare_axis == "conditions":
+                        stat_results_all = xstats.run_tukey(df)
+                    else:
+                        stat_results_all = xstats.run_tukey_between_treatments(df)
+                except Exception as e:
+                    st.error(f"Statistical test failed: {e}")
+                    stat_results_all = None
+
+            st.caption("Bracket style")
+            col_blw, col_bfs = st.columns(2)
+            with col_blw:
+                bracket_linewidth = st.slider("Line width", 0.3, 3.0, key="ps_bracket_linewidth", step=0.1)
+            with col_bfs:
+                bracket_fontsize = st.slider("Font size", 6.0, 18.0, key="ps_bracket_fontsize", step=0.5)
 
 # ---------------------------------------------------------------------------
-# Sidebar — filter
+# Post-tabs: apply filter and reorder to df
 # ---------------------------------------------------------------------------
-
-with st.sidebar:
-    st.header("🔍 Filter")
-    selected_conditions = st.multiselect(
-        "Show conditions",
-        options=conditions,
-        default=conditions,
-    )
 
 if not selected_conditions:
     st.warning("Select at least one condition.")
@@ -240,57 +711,6 @@ if selected_conditions != conditions:
         df["condition"] = df["condition"].cat.remove_unused_categories()
     conditions = selected_conditions
 
-# ---------------------------------------------------------------------------
-# Sidebar — reorder conditions / treatments
-# ---------------------------------------------------------------------------
-
-with st.sidebar:
-    with st.expander("↕ Reorder", expanded=False):
-        st.caption("Change the order number to reorder items in the plot.")
-        reorder_col1, reorder_col2 = st.columns(2)
-
-        with reorder_col1:
-            st.caption("Conditions (x-axis)")
-            cond_order_df = pd.DataFrame({
-                "Condition": conditions,
-                "Order": list(range(1, len(conditions) + 1)),
-            })
-            edited_cond_order = st.data_editor(
-                cond_order_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Condition": st.column_config.TextColumn(disabled=True),
-                    "Order": st.column_config.NumberColumn(min_value=1, step=1),
-                },
-                key="cond_order_editor",
-            )
-            conditions = (
-                edited_cond_order.sort_values("Order", kind="stable")["Condition"]
-                .tolist()
-            )
-
-        with reorder_col2:
-            st.caption("Treatments (legend)")
-            treat_order_df = pd.DataFrame({
-                "Treatment": treatments,
-                "Order": list(range(1, len(treatments) + 1)),
-            })
-            edited_treat_order = st.data_editor(
-                treat_order_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Treatment": st.column_config.TextColumn(disabled=True),
-                    "Order": st.column_config.NumberColumn(min_value=1, step=1),
-                },
-                key="treat_order_editor",
-            )
-            treatments = (
-                edited_treat_order.sort_values("Order", kind="stable")["Treatment"]
-                .tolist()
-            )
-
 # Apply reordering to df so downstream plotting respects the new order
 df["condition"] = pd.Categorical(df["condition"], categories=conditions, ordered=True)
 df["treatment"] = pd.Categorical(df["treatment"], categories=treatments, ordered=True)
@@ -301,396 +721,6 @@ n_treatments = len(treatments)
 min_reps = df.groupby(["condition", "treatment"], observed=True)["value"].count().min()
 if min_reps < 2:
     st.warning("Some groups have fewer than 2 replicates — error bars and statistical tests will be skipped for those groups.")
-
-# ---------------------------------------------------------------------------
-# Sidebar — plot configuration
-# All interactive widgets carry key="ps_xxx" so their values live in
-# session_state and are automatically captured / restored by presets.
-# ---------------------------------------------------------------------------
-
-with st.sidebar:
-    st.header("📊 Plot type")
-    plot_type = st.radio(
-        "Plot type",
-        ["bar+strip", "box+strip", "violin+strip", "line+scatter"],
-        key="ps_plot_type",
-        label_visibility="collapsed",
-    )
-    _base_type = plot_type.split("+")[0]
-
-    # ---- Y-axis -----------------------------------------------------------
-    st.header("📐 Y-axis")
-    log_scale_req = st.checkbox("Log scale", key="ps_log_scale")
-    log_scale = log_scale_req
-    if log_scale_req and df["value"].min() <= 0:
-        st.error("Log scale requires all values > 0. Falling back to linear scale.")
-        log_scale = False
-
-    show_grid = st.checkbox("Y-axis gridlines", key="ps_show_grid")
-
-    if _base_type in ("bar", "line"):
-        col_eb, col_cap = st.columns(2)
-        with col_eb:
-            error_bar = st.radio(
-                "Error bar",
-                ["sd", "sem", "ci95"],
-                key="ps_error_bar",
-                format_func=lambda x: {"sd": "SD", "sem": "SEM", "ci95": "95 % CI"}[x],
-            )
-        with col_cap:
-            cap_size = st.slider("Cap size", 0.0, 0.3, key="ps_cap_size", step=0.01)
-    else:
-        error_bar = "sd"
-        cap_size = 0.08
-
-    show_points = st.checkbox("Show individual data points", key="ps_show_points")
-    if show_points:
-        col_ps2, col_pa = st.columns(2)
-        with col_ps2:
-            point_size = st.slider("Dot size", 1.0, 12.0, key="ps_point_size", step=0.5)
-        with col_pa:
-            point_alpha = st.slider("Dot opacity", 0.1, 1.0, key="ps_point_alpha", step=0.05)
-    else:
-        point_size = _ps("ps_point_size")
-        point_alpha = _ps("ps_point_alpha")
-
-    # ---- Labels -----------------------------------------------------------
-    st.header("🏷️ Labels")
-    default_title = f"{file_label}  ·  {sheet}" if file_label else sheet
-    # Title is intentionally NOT preset-keyed — it's file/sheet specific.
-    title = st.text_input("Title", value=default_title)
-
-    xlabel    = st.text_input("X-axis label", key="ps_xlabel")
-    # ylabel defaults to the sheet name on first load; preset overrides after that.
-    if "ps_ylabel" not in st.session_state or st.session_state["ps_ylabel"] == "":
-        st.session_state["ps_ylabel"] = sheet
-    ylabel    = st.text_input("Y-axis label", key="ps_ylabel")
-    leg_title = st.text_input("Legend title", key="ps_leg_title")
-    col_sl, col_li = st.columns(2)
-    with col_sl:
-        show_legend = st.checkbox("Show legend", key="ps_show_legend")
-    with col_li:
-        legend_inside = st.checkbox("Legend inside", key="ps_legend_inside")
-
-    # ---- Line options (only when line plot) --------------------------------
-    if _base_type == "line":
-        st.header("📈 Line options")
-        # Auto-detect whether all conditions are numeric-prefixed
-        import re as _re
-        _NUM_RE = _re.compile(r"^\s*[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?")
-        _auto_numeric = all(_NUM_RE.match(str(c)) for c in conditions)
-        # Seed the checkbox default on first load (only if key not yet in session state)
-        if "ps_x_numeric" not in st.session_state:
-            st.session_state["ps_x_numeric"] = _auto_numeric
-        x_numeric = st.checkbox("Numeric x-axis (proportional spacing)",
-                                key="ps_x_numeric",
-                                help="Auto-detected from condition labels. Uncheck to use equal spacing.")
-        x_suffix = st.text_input("X-axis unit suffix (appended to pure-number labels)",
-                                 key="ps_x_suffix", placeholder="e.g.  h  or  nM")
-        x_tick_interval = st.number_input(
-            "X major tick interval (0 = auto)", min_value=0.0,
-            key="ps_x_tick_interval", step=1.0,
-            help="Set to 0 to let matplotlib choose automatically.",
-        )
-        error_style = st.radio("Error style", ["band", "bars"], key="ps_error_style",
-                               format_func=lambda x: {"band": "Shaded band", "bars": "Error bars"}[x],
-                               horizontal=True)
-        col_lw, col_ms = st.columns(2)
-        with col_lw:
-            line_width = st.slider("Line width", 0.5, 4.0, key="ps_line_width", step=0.1)
-        with col_ms:
-            marker_size = st.slider("Marker size", 2.0, 14.0, key="ps_marker_size", step=0.5)
-        marker_style = st.selectbox(
-            "Marker",
-            ["o", "s", "^", "D", "x", "v", "P", "none"],
-            key="ps_marker_style",
-            format_func=lambda x: {"o": "● Circle", "s": "■ Square", "^": "▲ Triangle up",
-                                   "D": "◆ Diamond", "x": "✕ Cross", "v": "▼ Triangle down",
-                                   "P": "✚ Plus (filled)", "none": "No marker"}[x],
-        )
-        st.caption("Trend line")
-        trendline = st.selectbox(
-            "Fit type",
-            ["none", "linear", "poly2", "poly3", "exp", "log", "power", "spline"],
-            key="ps_trendline",
-            format_func=lambda x: {
-                "none": "None", "linear": "Linear", "poly2": "Polynomial deg 2",
-                "poly3": "Polynomial deg 3", "exp": "Exponential",
-                "log": "Logarithmic", "power": "Power law",
-                "spline": "Smoothing spline",
-            }[x],
-        )
-        if trendline != "none":
-            col_ts, col_tm = st.columns(2)
-            with col_ts:
-                trendline_source = st.radio("Fit data", ["means", "replicates"],
-                                            key="ps_trendline_source",
-                                            format_func=lambda x: {"means": "Means", "replicates": "All replicates"}[x])
-            with col_tm:
-                trendline_mode = st.radio("Mode", ["overlay", "replace"],
-                                          key="ps_trendline_mode",
-                                          format_func=lambda x: {"overlay": "Overlay", "replace": "Replace line"}[x])
-        else:
-            trendline_source = _ps("ps_trendline_source")
-            trendline_mode   = _ps("ps_trendline_mode")
-    else:
-        x_numeric        = _ps("ps_x_numeric")
-        x_suffix         = _ps("ps_x_suffix")
-        x_tick_interval  = _ps("ps_x_tick_interval")
-        error_style     = _ps("ps_error_style")
-        line_width      = _ps("ps_line_width")
-        marker_size     = _ps("ps_marker_size")
-        marker_style    = _ps("ps_marker_style")
-        trendline       = _ps("ps_trendline")
-        trendline_source = _ps("ps_trendline_source")
-        trendline_mode  = _ps("ps_trendline_mode")
-
-    # ---- Colors -----------------------------------------------------------
-    st.header("🎨 Colors")
-    palette_name = st.selectbox("Palette", utils.PALETTE_NAMES, key="ps_palette_name")
-
-    custom_colors: list[str] = []
-    if palette_name == "Custom":
-        st.caption("Pick a color for each treatment:")
-        default_palette = utils.get_palette("iGEM", n_treatments)
-        for i, t in enumerate(treatments):
-            col = st.color_picker(
-                f"{t}",
-                value=default_palette[i % len(default_palette)],
-                key=f"cp_{i}",
-            )
-            custom_colors.append(col)
-        palette = custom_colors
-    else:
-        palette = utils.get_palette(palette_name, n_treatments)
-
-    if _base_type == "bar":
-        col_ew, col_ec = st.columns(2)
-        with col_ew:
-            bar_edge_width = st.slider("Edge width", 0.0, 3.0, key="ps_bar_edge_width", step=0.1)
-        with col_ec:
-            bar_edge_color = st.color_picker("Edge color", key="ps_bar_edge_color")
-        bar_alpha = st.slider("Bar opacity", 0.1, 1.0, key="ps_bar_alpha", step=0.05)
-    else:
-        bar_edge_width = 0.8
-        bar_edge_color = _ps("ps_bar_edge_color")
-        bar_alpha = 1.0
-
-    # ---- Figure size ------------------------------------------------------
-    st.header("📏 Figure size")
-    col_w, col_h = st.columns(2)
-    with col_w:
-        fig_width = st.slider("Width (in)", 6, 20, key="ps_fig_width")
-    with col_h:
-        fig_height = st.slider("Height (in)", 4, 12, key="ps_fig_height")
-    bar_gap = st.slider(
-        "Bar gap", 0.0, 0.8, key="ps_bar_gap", step=0.05,
-        help="Gap between bars within the same condition group.",
-    )
-
-    # ---- Statistics -------------------------------------------------------
-    st.header("📈 Statistics")
-    if _base_type == "line":
-        st.info("Statistical annotations are not available for line plots.")
-    run_stats = st.checkbox("Run statistical tests", key="ps_run_stats",
-                            disabled=_base_type == "line")
-    stat_results: pd.DataFrame | None = None
-    stat_results_all: pd.DataFrame | None = None
-    anova_table: pd.DataFrame | None = None
-    test_mode    = _ps("ps_test_mode")
-    compare_axis = _ps("ps_compare_axis")
-    show_ns      = True
-    bracket_linewidth = _ps("ps_bracket_linewidth")
-    bracket_fontsize  = _ps("ps_bracket_fontsize")
-    show_pvalue  = _ps("ps_show_pvalue")
-
-    if run_stats:
-        test_mode = st.radio(
-            "Test",
-            ["ttest", "tukey", "two_way_anova"],
-            key="ps_test_mode",
-            format_func=lambda x: {
-                "ttest":         "t-test vs reference condition",
-                "tukey":         "ANOVA + Tukey HSD (all pairs)",
-                "two_way_anova": "Two-way ANOVA + Sidak",
-            }[x],
-        )
-
-        if test_mode in ("tukey", "two_way_anova"):
-            # "cells" is only valid for two_way_anova; reset if tukey is picked
-            if test_mode == "tukey" and st.session_state.get("ps_compare_axis") == "cells":
-                st.session_state["ps_compare_axis"] = "conditions"
-            _axis_opts = (["conditions", "treatments", "cells"]
-                          if test_mode == "two_way_anova"
-                          else ["conditions", "treatments"])
-            compare_axis = st.radio(
-                "Compare",
-                _axis_opts,
-                key="ps_compare_axis",
-                format_func=lambda x: {
-                    "conditions": "Conditions (per treatment)",
-                    "treatments": "Treatments (per condition)",
-                    "cells":      "All cell means — global Sidak",
-                }[x],
-                horizontal=True,
-            )
-
-        show_pvalue = st.checkbox("Show p-values instead of stars", key="ps_show_pvalue")
-
-        if test_mode == "ttest":
-            ref_cond = st.selectbox("Reference condition", conditions)
-        else:
-            ref_cond = conditions[0]
-
-        with st.spinner("Running tests…"):
-            try:
-                if test_mode == "ttest":
-                    stat_results_all = xstats.run_ttests_vs_reference(df, ref_cond)
-                elif test_mode == "two_way_anova":
-                    anova_table, stat_results_all = xstats.run_two_way_anova_sidak(df, compare_axis)
-                elif compare_axis == "conditions":
-                    stat_results_all = xstats.run_tukey(df)
-                else:
-                    stat_results_all = xstats.run_tukey_between_treatments(df)
-            except Exception as e:
-                st.error(f"Statistical test failed: {e}")
-                stat_results_all = None
-
-        # Bracket selection moves to the main area (data_editor table before the plot)
-
-        st.caption("Bracket style")
-        col_blw, col_bfs = st.columns(2)
-        with col_blw:
-            bracket_linewidth = st.slider("Line width", 0.3, 3.0, key="ps_bracket_linewidth", step=0.1)
-        with col_bfs:
-            bracket_fontsize = st.slider("Font size", 6.0, 18.0, key="ps_bracket_fontsize", step=0.5)
-
-    # ---- Typography -------------------------------------------------------
-    with st.expander("🔤 Typography"):
-        font_family = st.selectbox(
-            "Font family",
-            ["sans-serif", "serif", "monospace"],
-            key="ps_font_family",
-        )
-        font_mode = st.radio(
-            "Font sizing",
-            ["Global scale", "Per element"],
-            key="ps_font_mode",
-            horizontal=True,
-        )
-        fontsizes: dict | None = None
-        font_scale = _ps("ps_font_scale")
-        if font_mode == "Global scale":
-            font_scale = st.slider("Font scale", 0.5, 2.5, key="ps_font_scale", step=0.1)
-        else:
-            col_ft, col_fa = st.columns(2)
-            col_ftk, col_fl = st.columns(2)
-            with col_ft:
-                fs_title  = st.number_input("Title",       key="ps_fs_title",  min_value=4, max_value=40)
-            with col_fa:
-                fs_axis   = st.number_input("Axis labels", key="ps_fs_axis",   min_value=4, max_value=40)
-            with col_ftk:
-                fs_tick   = st.number_input("Tick labels", key="ps_fs_tick",   min_value=4, max_value=40)
-            with col_fl:
-                fs_legend = st.number_input("Legend",      key="ps_fs_legend", min_value=4, max_value=40)
-            fontsizes = {
-                "title": fs_title, "axis_label": fs_axis,
-                "tick":  fs_tick,  "legend":     fs_legend,
-            }
-
-    # ---- Advanced ---------------------------------------------------------
-    with st.expander("⚙️ Advanced"):
-        y_format = st.selectbox(
-            "Y-axis number format",
-            ["auto", "plain", "sci", "SI"],
-            key="ps_y_format",
-            format_func=lambda x: {
-                "auto":  "Auto",
-                "plain": "Plain (no sci notation)",
-                "sci":   "Scientific (×10ⁿ)",
-                "SI":    "SI prefix (M, k…)",
-            }[x],
-        )
-
-        col_tr, col_tf = st.columns(2)
-        with col_tr:
-            tick_rotation = st.slider("Tick rotation °", 0, 90, key="ps_tick_rotation")
-        with col_tf:
-            tick_fontsize_adv = st.number_input(
-                "Tick font size", key="ps_tick_fontsize_adv",
-                min_value=4, max_value=40,
-                help="Overrides global/per-element tick setting when changed.",
-            )
-
-        spines = st.radio(
-            "Axis border style",
-            ["open", "all", "none"],
-            key="ps_spines",
-            format_func=lambda x: {"open": "Open (L-shape)", "all": "Full box", "none": "None"}[x],
-            horizontal=True,
-        )
-        spine_width = st.slider("Border / tick width", 0.3, 3.0, key="ps_spine_width", step=0.1)
-
-        st.caption("Tick marks")
-        tick_direction = st.radio("Direction", ["out", "in", "inout"],
-                                  key="ps_tick_direction", horizontal=True,
-                                  format_func=lambda x: {"out": "Out", "in": "In", "inout": "Both"}[x])
-        col_tl, col_tw = st.columns(2)
-        with col_tl:
-            major_tick_length = st.slider("Major length", 1.0, 12.0, key="ps_major_tick_length", step=0.5)
-        with col_tw:
-            major_tick_width = st.slider("Major width", 0.3, 3.0, key="ps_major_tick_width", step=0.1)
-        col_my, col_mx = st.columns(2)
-        with col_my:
-            minor_ticks_y = st.number_input("Minor ticks / interval (Y)", min_value=0, max_value=9,
-                                            key="ps_minor_ticks_y", step=1)
-        with col_mx:
-            _mx_disabled = not (_base_type == "line" and _ps("ps_x_numeric"))
-            minor_ticks_x = st.number_input("Minor ticks / interval (X)", min_value=0, max_value=9,
-                                            key="ps_minor_ticks_x", step=1,
-                                            disabled=_mx_disabled,
-                                            help="Only available for line plots with numeric x-axis.")
-        col_sl, col_sw = st.columns(2)
-        with col_sl:
-            minor_tick_length = st.slider("Minor length", 1.0, 8.0, key="ps_minor_tick_length", step=0.5)
-        with col_sw:
-            minor_tick_width = st.slider("Minor width", 0.3, 2.0, key="ps_minor_tick_width", step=0.1)
-
-        st.caption("Axis limits (leave blank for auto)")
-        col_y1, col_y2 = st.columns(2)
-        with col_y1:
-            ymin_str = st.text_input("Y min", key="ps_ymin_str", placeholder="auto")
-        with col_y2:
-            ymax_str = st.text_input("Y max", key="ps_ymax_str", placeholder="auto")
-        col_x1, col_x2 = st.columns(2)
-        with col_x1:
-            xmin_str = st.text_input("X min", key="ps_xmin_str", placeholder="auto")
-        with col_x2:
-            xmax_str = st.text_input("X max", key="ps_xmax_str", placeholder="auto")
-
-        def _parse_lim(s: str):
-            s = s.strip()
-            if not s:
-                return None
-            try:
-                return float(s)
-            except ValueError:
-                return None
-
-        ylim = (_parse_lim(ymin_str), _parse_lim(ymax_str))
-        xlim = (_parse_lim(xmin_str), _parse_lim(xmax_str))
-        if all(v is None for v in ylim):
-            ylim = None
-        if all(v is None for v in xlim):
-            xlim = None
-
-        if ylim is not None and stat_results is not None:
-            st.info("Y limits override bracket-driven axis expansion.")
-
-    # ---- Data preview toggle ----------------------------------------------
-    st.header("🗂️ Data preview")
-    show_preview = st.checkbox("Show / edit labels & raw data", value=False)
-
 
 # ---------------------------------------------------------------------------
 # Resolve effective tick font size
@@ -905,6 +935,7 @@ fig = plotter.make_figure(
     xlim=xlim,
     x_numeric=x_numeric,
     x_tick_interval=x_tick_interval,
+    y_tick_interval=y_tick_interval,
     error_style=error_style,
     line_width=line_width,
     marker_style=marker_style,

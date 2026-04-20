@@ -25,6 +25,7 @@ secrets.*
 credentials.*
 CLAUDE.md
 CODEX.md
+graphify-out/
 
 # Streamlit
 .streamlit/
