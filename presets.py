@@ -71,6 +71,8 @@ DEFAULTS: dict[str, object] = {
     "ps_compare_axis":     "conditions",
     "ps_show_ns":          False,
     "ps_show_pvalue":      False,
+    "ps_show_significance": True,
+    "ps_show_fold_change": False,
     "ps_bracket_linewidth": 0.9,
     "ps_bracket_fontsize": 11.0,
     # Typography

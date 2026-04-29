@@ -102,6 +102,8 @@ def make_figure(
     bracket_linewidth: float = 0.9,
     bracket_fontsize: float = 11.0,
     show_pvalue: bool = False,
+    show_significance: bool = True,
+    show_fold_change: bool = False,
 ) -> matplotlib.figure.Figure:
     """
     Render *df* as a grouped bar / box / violin plot with optional
@@ -504,6 +506,8 @@ def make_figure(
             bracket_linewidth=bracket_linewidth,
             bracket_fontsize=bracket_fontsize,
             show_pvalue=show_pvalue,
+            show_significance=show_significance,
+            show_fold_change=show_fold_change,
         )
 
     # ------------------------------------------------------------------

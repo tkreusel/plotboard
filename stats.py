@@ -303,6 +303,8 @@ def draw_significance_bars(
     bracket_linewidth: float = 0.9,
     bracket_fontsize: float = 11.0,
     show_pvalue: bool = False,
+    show_significance: bool = True,
+    show_fold_change: bool = False,
 ) -> None:
     """
     Draw horizontal significance brackets above the relevant bars on *ax*.
@@ -324,10 +326,19 @@ def draw_significance_bars(
     treatments = _ordered_unique(df["treatment"])
     n_treatments = len(treatments)
     dodge_width = 0.8 / n_treatments
+    _ci = {c: i for i, c in enumerate(conditions)}
+    _ti = {t: i for i, t in enumerate(treatments)}
 
-    def bar_x(cond_idx: int, treat_idx: int) -> float:
-        offset = (treat_idx - (n_treatments - 1) / 2.0) * dodge_width
-        return cond_idx + offset
+    def bar_x(ci: int, ti: int) -> float:
+        return ci + (ti - (n_treatments - 1) / 2.0) * dodge_width
+
+    # Precompute per-cell means for fold change labels
+    means_dict: dict[tuple[str, str], float] = {}
+    if show_fold_change:
+        for (cond, treat), grp in df.groupby(["condition", "treatment"], observed=True):
+            vals = grp["value"].dropna().values
+            if len(vals) > 0:
+                means_dict[(str(cond), str(treat))] = float(np.mean(vals))
 
     # ---- Collect bracketing jobs ----------------------------------------
     jobs: list[dict] = []
@@ -338,44 +349,40 @@ def draw_significance_bars(
             continue
 
         if compare_axis == "cells":
-            # Any two cells — each has its own condition+treatment position
             cond_a = str(row["cond_A"])
             cond_b = str(row["cond_B"])
             treat_a = str(row["treat_A"])
             treat_b = str(row["treat_B"])
-            if (cond_a not in conditions or cond_b not in conditions
-                    or treat_a not in treatments or treat_b not in treatments):
+            if cond_a not in _ci or cond_b not in _ci or treat_a not in _ti or treat_b not in _ti:
                 continue
-            x1 = bar_x(conditions.index(cond_a), treatments.index(treat_a))
-            x2 = bar_x(conditions.index(cond_b), treatments.index(treat_b))
+            x1 = bar_x(_ci[cond_a], _ti[treat_a])
+            x2 = bar_x(_ci[cond_b], _ti[treat_b])
             k1 = f"{cond_a}|{treat_a}"
             k2 = f"{cond_b}|{treat_b}"
             pair_key = (min(k1, k2), max(k1, k2))
+            group1 = (cond_a, treat_a)
+            group2 = (cond_b, treat_b)
 
         elif compare_axis == "treatments":
-            # Brackets between two treatments within one condition
             condition = str(row["condition"])
-            if condition not in conditions:
+            if condition not in _ci:
                 continue
-            c_idx = conditions.index(condition)
-
             treat_a = str(row["group_A"])
             treat_b = str(row["group_B"])
-            if treat_a not in treatments or treat_b not in treatments:
+            if treat_a not in _ti or treat_b not in _ti:
                 continue
-
-            x1 = bar_x(c_idx, treatments.index(treat_a))
-            x2 = bar_x(c_idx, treatments.index(treat_b))
+            x1 = bar_x(_ci[condition], _ti[treat_a])
+            x2 = bar_x(_ci[condition], _ti[treat_b])
             pair_key = (condition, min(treat_a, treat_b), max(treat_a, treat_b))
+            group1 = (condition, treat_a)
+            group2 = (condition, treat_b)
 
         else:
-            # Brackets between two conditions for one treatment (default)
             treatment = str(row["treatment"])
-            if treatment not in treatments:
+            if treatment not in _ti:
                 continue
-            t_idx = treatments.index(treatment)
+            t_idx = _ti[treatment]
 
-            # Infer row format from columns (ttest has "reference"; tukey has "group_A")
             if "reference" in stat_results.columns:
                 cond_a = str(row["reference"])
                 cond_b = str(row["condition"])
@@ -383,17 +390,21 @@ def draw_significance_bars(
                 cond_a = str(row["group_A"])
                 cond_b = str(row["group_B"])
 
-            if cond_a not in conditions or cond_b not in conditions:
+            if cond_a not in _ci or cond_b not in _ci:
                 continue
 
-            x1 = bar_x(conditions.index(cond_a), t_idx)
-            x2 = bar_x(conditions.index(cond_b), t_idx)
+            x1 = bar_x(_ci[cond_a], t_idx)
+            x2 = bar_x(_ci[cond_b], t_idx)
             pair_key = (treatment, min(cond_a, cond_b), max(cond_a, cond_b))
+            group1 = (cond_a, treatment)
+            group2 = (cond_b, treatment)
 
         jobs.append({
             "x1": x1, "x2": x2, "stars": stars,
             "p_value": float(row["p_value"]) if "p_value" in stat_results.columns else None,
             "pair_key": pair_key,
+            "group1": group1,
+            "group2": group2,
         })
 
     if not jobs:
@@ -413,7 +424,8 @@ def draw_significance_bars(
 
     # level_right_x[i] = rightmost x used by any bracket already at level i
     level_right_x: list[float] = []
-    annotated: list[tuple[float, float, str, float | None, int]] = []  # x1, x2, stars, p_value, level
+    # x1, x2, stars, p_value, level, group1, group2
+    annotated: list[tuple[float, float, str, float | None, int, tuple, tuple]] = []
 
     for job in jobs_sorted:
         x_lo = min(job["x1"], job["x2"]) - margin
@@ -429,7 +441,10 @@ def draw_significance_bars(
             assigned = len(level_right_x)
             level_right_x.append(x_hi)
 
-        annotated.append((job["x1"], job["x2"], job["stars"], job.get("p_value"), assigned))
+        annotated.append((
+            job["x1"], job["x2"], job["stars"], job.get("p_value"), assigned,
+            job.get("group1", ("", "")), job.get("group2", ("", "")),
+        ))
 
     # Convert levels to y-coordinates
     def level_to_y(level: int) -> float:
@@ -438,7 +453,7 @@ def draw_significance_bars(
         return y_hi + data_range * 0.09 * (level + 1)
 
     # ---- Draw brackets -------------------------------------------------
-    for x1, x2, stars, p_value, level in annotated:
+    for x1, x2, stars, p_value, level, group1, group2 in annotated:
         y = level_to_y(level)
         if log_scale:
             tick_h = y * 0.025
@@ -452,23 +467,36 @@ def draw_significance_bars(
             linewidth=bracket_linewidth,
             clip_on=False,
         )
-        if show_pvalue and p_value is not None:
-            label = f"p={p_value:.3f}" if p_value >= 0.001 else "p<0.001"
-        else:
-            label = stars
-        ax.text(
-            (x1 + x2) / 2,
-            y,
-            label,
-            ha="center",
-            va="bottom",
-            fontsize=bracket_fontsize,
-            clip_on=False,
-        )
+
+        # Build annotation label: fold change (top) and/or significance (bottom)
+        parts: list[str] = []
+        if show_fold_change:
+            m1 = means_dict.get(group1)
+            m2 = means_dict.get(group2)
+            if m1 is not None and m2 is not None and min(m1, m2) > 0:
+                fc = max(m1, m2) / min(m1, m2)
+                parts.append(f"{fc:.1f}x")
+        if show_significance:
+            if show_pvalue and p_value is not None:
+                parts.append(f"p={p_value:.3f}" if p_value >= 0.001 else "p<0.001")
+            else:
+                parts.append(stars)
+        label = "\n".join(parts)
+
+        if label:
+            ax.text(
+                (x1 + x2) / 2,
+                y,
+                label,
+                ha="center",
+                va="bottom",
+                fontsize=bracket_fontsize,
+                clip_on=False,
+            )
 
     # ---- Expand y-axis to fit all brackets ----------------------------
     if annotated:
-        max_level = max(level for _, _, _, _, level in annotated)
+        max_level = max(a[4] for a in annotated)
         max_y = level_to_y(max_level)
         if log_scale:
             ax.set_ylim(top=max_y * 1.25)

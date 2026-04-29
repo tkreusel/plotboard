@@ -67,6 +67,27 @@ def _get_sheet_names(file_bytes: bytes) -> list[str]:
     return xparser.sheet_names(wb)
 
 
+@st.cache_data(show_spinner="Running statistical tests…")
+def _run_stat_test(
+    file_bytes: bytes,
+    sheet_name: str,
+    test_mode: str,
+    compare_axis: str,
+    ref_cond: str,
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    """Returns (anova_table, posthoc_df). Cached so style changes don't retrigger tests."""
+    df_raw = _load_sheet(file_bytes, sheet_name)
+    if test_mode == "ttest":
+        return None, xstats.run_ttests_vs_reference(df_raw, ref_cond)
+    elif test_mode == "two_way_anova":
+        anova_tbl, posthoc = xstats.run_two_way_anova_sidak(df_raw, compare_axis)
+        return anova_tbl, posthoc
+    elif compare_axis == "conditions":
+        return None, xstats.run_tukey(df_raw)
+    else:
+        return None, xstats.run_tukey_between_treatments(df_raw)
+
+
 # ---------------------------------------------------------------------------
 # Sidebar — file loading (stays above tabs; drives st.stop())
 # ---------------------------------------------------------------------------
@@ -636,7 +657,9 @@ with st.sidebar:
         show_ns      = True
         bracket_linewidth = _ps("ps_bracket_linewidth")
         bracket_fontsize  = _ps("ps_bracket_fontsize")
-        show_pvalue  = _ps("ps_show_pvalue")
+        show_pvalue       = _ps("ps_show_pvalue")
+        show_significance = _ps("ps_show_significance")
+        show_fold_change  = _ps("ps_show_fold_change")
 
         if run_stats:
             test_mode = st.radio(
@@ -670,25 +693,24 @@ with st.sidebar:
                 )
 
             show_pvalue = st.checkbox("Show p-values instead of stars", key="ps_show_pvalue")
+            col_ss, col_sfc = st.columns(2)
+            with col_ss:
+                show_significance = st.checkbox("Show significance", key="ps_show_significance")
+            with col_sfc:
+                show_fold_change = st.checkbox("Show fold change", key="ps_show_fold_change")
 
             if test_mode == "ttest":
                 ref_cond = st.selectbox("Reference condition", conditions)
             else:
                 ref_cond = conditions[0]
 
-            with st.spinner("Running tests…"):
-                try:
-                    if test_mode == "ttest":
-                        stat_results_all = xstats.run_ttests_vs_reference(df, ref_cond)
-                    elif test_mode == "two_way_anova":
-                        anova_table, stat_results_all = xstats.run_two_way_anova_sidak(df, compare_axis)
-                    elif compare_axis == "conditions":
-                        stat_results_all = xstats.run_tukey(df)
-                    else:
-                        stat_results_all = xstats.run_tukey_between_treatments(df)
-                except Exception as e:
-                    st.error(f"Statistical test failed: {e}")
-                    stat_results_all = None
+            try:
+                anova_table, stat_results_all = _run_stat_test(
+                    file_bytes, _cur_sheet, test_mode, compare_axis, ref_cond
+                )
+            except Exception as e:
+                st.error(f"Statistical test failed: {e}")
+                stat_results_all = None
 
             st.caption("Bracket style")
             col_blw, col_bfs = st.columns(2)
@@ -958,6 +980,8 @@ fig = plotter.make_figure(
     bracket_linewidth=bracket_linewidth,
     bracket_fontsize=bracket_fontsize,
     show_pvalue=show_pvalue,
+    show_significance=show_significance,
+    show_fold_change=show_fold_change,
 )
 
 st.pyplot(fig, use_container_width=False)
