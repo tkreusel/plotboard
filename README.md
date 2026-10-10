@@ -2,7 +2,7 @@
 
 ![Plotboard logo](logo/logo.png)
 
-A browser-based plotting tool for luciferase reporter assay data (or any GraphPad Prism-style grouped Excel file). Upload your data, configure every visual aspect of the figure in the sidebar, run statistics, and export publication-ready PNG / SVG / PDF — all without writing code.
+A browser-based plotting tool for luciferase reporter assay data (or any GraphPad Prism-style grouped Excel file). Upload your data, configure every visual aspect of the figure in the sidebar, run statistics, and export publication-ready PNG / SVG / PDF (or the data and settings as JSON) — all without writing code.
 
 ---
 
@@ -224,6 +224,28 @@ A **⬇️ Download figure** button sits directly under the plot; it opens a pop
 
 Each file is rendered when you click its button, not in advance, so having four formats on offer costs nothing while you are adjusting the plot.
 
+### JSON (data + settings)
+
+The fifth button, **JSON (data + settings)**, saves everything behind the figure in one file, to redraw it later outside the app or reuse its style:
+
+| Key | What it holds |
+|---|---|
+| `data` | The plotted values in tidy form (`condition`, `treatment`, `replicate`, `value`), after filtering and renaming, plus the display order of conditions and treatments |
+| `stats` | The significance comparisons drawn as brackets (or `null`) |
+| `make_figure_kwargs` | Every argument the figure was drawn with, already resolved: palette as hex colours, axis limits as numbers, font sizes, labels |
+| `preset` | The sidebar settings in preset-file form. Save this object as `.presets/<name>.json` and it shows up as a preset |
+| `source` | Workbook, sheet, export time |
+
+Redraw it with plotboard:
+
+```python
+import json, bundle, plotter
+df, kwargs = bundle.load(json.load(open("figure.json")))
+fig = plotter.make_figure(df, **kwargs)
+```
+
+or without it, straight from `data` and `make_figure_kwargs` with pandas + seaborn. Missing numbers are `null` (JSON has no NaN). Single figures only for now; the button is not shown in panel mode.
+
 ### Background options
 
 Inside the same popover, below the format buttons:
@@ -251,6 +273,7 @@ Batch export is hidden in panel mode — it produces one figure per sheet, which
 
 ```
 app.py        # Entry point — loads the workbook and assembles the figure
+bundle.py     # The JSON export: data + settings + plot arguments, and loading it back
 settings.py   # Durable store for every sidebar setting
 figspec.py    # Settings → plotting arguments (shared by preview, panels, batch)
 dataio.py     # Cached workbook access + DataFrame reshaping
@@ -291,7 +314,8 @@ pip install -r requirements.txt
 ## Tests
 
 ```bash
-python tests/test_regressions.py     # no pytest required
+python tests/test_regressions.py     # no pytest required (needs data/E24_Analysis.xlsx)
+python tests/test_json_export.py     # self-contained, builds its own workbook
 # or
 pip install -e ".[dev]" && pytest
 ```

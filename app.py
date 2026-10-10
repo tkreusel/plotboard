@@ -70,6 +70,7 @@ warmup.wait()
 
 import matplotlib  # noqa: E402
 
+import bundle as xbundle  # noqa: E402
 import dataio  # noqa: E402
 import figspec  # noqa: E402
 import panel as xpanel  # noqa: E402
@@ -232,10 +233,11 @@ panels.capture_active(
 df_plot = dataio.apply_renames(df, cond_rename, treat_rename)
 
 
-def _build_single_figure() -> matplotlib.figure.Figure:
+def _single_figure_kwargs() -> dict:
+    """Everything ``plotter.make_figure`` gets — kept so the JSON export can
+    record exactly what was drawn."""
     ylim, xlim = figspec.axis_limits(current)
-    return plotter.make_figure(
-        df_plot,
+    return dict(
         **figspec.figure_size(current),
         ylim=ylim,
         xlim=xlim,
@@ -249,9 +251,14 @@ def _build_single_figure() -> matplotlib.figure.Figure:
     )
 
 
+figure_kwargs: dict | None = None
 with plot_slot:
     try:
-        fig = panels.build_figure(ctx) if panel_mode else _build_single_figure()
+        if panel_mode:
+            fig = panels.build_figure(ctx)
+        else:
+            figure_kwargs = _single_figure_kwargs()
+            fig = plotter.make_figure(df_plot, **figure_kwargs)
     except Exception as exc:
         # A bad combination of settings should cost you the preview, not the
         # session — the sidebar stays usable so the setting can be undone.
@@ -264,8 +271,13 @@ if fig is not None:
     with export_slot:
         safe_sheet = ctx.sheet.replace(" ", "_")
         stem = file_label.replace(".xlsx", "").replace(" ", "_")
+        # ponytail: single figures only; panel mode would need one bundle per slot.
+        bundle_of = None if figure_kwargs is None else (
+            lambda: xbundle.build(df_plot, figure_kwargs=figure_kwargs,
+                                  settings=current, file_label=file_label,
+                                  sheet=ctx.sheet))
         export.render_downloads(
-            fig, f"{stem}_{'panel' if panel_mode else safe_sheet}")
+            fig, f"{stem}_{'panel' if panel_mode else safe_sheet}", bundle_of)
 
 # Notes sit under the figure rather than above it: a warning at the top of the
 # page pushes the plot down every time the data changes.
