@@ -75,6 +75,8 @@ Save and restore all visual/style settings as named presets (stored as JSON file
 
 The **Default** preset is created automatically on first launch and always reflects the original factory settings. It cannot be accidentally overwritten — rename it if you want a customised starting point.
 
+The presets in `default_presets/` (**Default** and **VOYAGE**) are copied into `.presets/` on first launch; one you have saved over is never replaced. **VOYAGE** (the defaults in the Peach & Teal palette) is the standard: it loads on startup unless you star another preset.
+
 ---
 
 ### 🔍 Data tab — filter & order

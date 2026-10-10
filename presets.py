@@ -114,14 +114,26 @@ DEFAULTS: dict[str, object] = {
 # files: a preset is a *style*, and should not carry one figure's title text.
 PRESET_EXCLUDE: frozenset[str] = frozenset({"ps_title"})
 
+# Presets that ship with the app, copied into PRESETS_DIR when missing. VOYAGE
+# (the team look, Peach & Teal) is the standard one: it loads on startup unless
+# someone has starred another.
+BUILTIN_DIR = Path(__file__).parent / "default_presets"
+STANDARD_PRESET = "VOYAGE"
+
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 def _ensure_default() -> None:
-    """Create the Default preset from DEFAULTS if it doesn't exist yet."""
+    """Copy in the shipped presets that aren't there yet, and create the Default
+    preset from DEFAULTS if it still doesn't exist.  Existing files are left
+    alone, so a preset saved over a built-in survives restarts."""
     PRESETS_DIR.mkdir(exist_ok=True)
+    for shipped in sorted(BUILTIN_DIR.glob("*.json")):
+        target = PRESETS_DIR / shipped.name
+        if not target.exists():
+            target.write_bytes(shipped.read_bytes())
     default_path = PRESETS_DIR / "Default.json"
     if not default_path.exists():
         default_path.write_text(
@@ -134,11 +146,14 @@ _STARTUP_FILE = PRESETS_DIR / "_startup.txt"
 
 
 def get_startup_preset() -> str:
-    """Return the name of the preset loaded on session start (default: 'Default')."""
+    """Return the name of the preset loaded on session start: the starred one,
+    else the standard preset, else 'Default' if that has been deleted."""
     if _STARTUP_FILE.exists():
         name = _STARTUP_FILE.read_text(encoding="utf-8").strip()
         if (PRESETS_DIR / f"{_sanitise(name)}.json").exists():
             return name
+    if (PRESETS_DIR / f"{STANDARD_PRESET}.json").exists():
+        return STANDARD_PRESET
     return "Default"
 
 
