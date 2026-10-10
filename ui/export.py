@@ -22,6 +22,7 @@ from typing import Callable
 import matplotlib
 import streamlit as st
 
+import bundle
 import dataio
 import figspec
 import plotter
@@ -41,11 +42,18 @@ _FORMATS: list[tuple[str, str, str, int]] = [
 
 
 @st.fragment
-def render_downloads(fig: matplotlib.figure.Figure, base_name: str) -> None:
+def render_downloads(
+    fig: matplotlib.figure.Figure,
+    base_name: str,
+    bundle_of: Callable[[], dict] | None = None,
+) -> None:
     """Download popover.
 
     A fragment, so changing the export background re-runs only this block
     instead of rebuilding the figure and re-running the whole page.
+
+    *bundle_of* builds the "everything" JSON (see ``bundle.py``); like the
+    images it only runs when that button is clicked.
     """
     export_kwargs = figspec.export_kwargs(settings.snapshot())
 
@@ -58,6 +66,16 @@ def render_downloads(fig: matplotlib.figure.Figure, base_name: str) -> None:
                 file_name=f"{base_name}{suffix}.{fmt}",
                 mime=mime,
                 width="stretch",
+            )
+        if bundle_of is not None:
+            st.download_button(
+                "JSON (data + settings)",
+                data=lambda: bundle.to_json(bundle_of()),
+                file_name=f"{base_name}.json",
+                mime="application/json",
+                width="stretch",
+                help="The plotted data, the stats and every setting, to "
+                     "redraw this figure later or reuse its style as a preset.",
             )
 
         st.divider()
