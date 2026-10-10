@@ -129,8 +129,6 @@ def _ensure_default() -> None:
             encoding="utf-8",
         )
 
-_ensure_default()
-
 
 _STARTUP_FILE = PRESETS_DIR / "_startup.txt"
 
@@ -219,3 +217,8 @@ def _migrate(key: str, value: object) -> object:
 def _sanitise(name: str) -> str:
     """Strip characters that are unsafe in filenames."""
     return re.sub(r'[\\/*?:"<>|]', "_", name.strip())
+
+
+# Last, not under _ensure_default(): it calls _preset_payload, which is defined
+# above, and a fresh checkout without .presets/Default.json crashed on import.
+_ensure_default()
