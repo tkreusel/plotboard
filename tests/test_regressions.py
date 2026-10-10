@@ -252,6 +252,39 @@ def test_preset_roundtrip():
         xpresets.delete(name)
 
 
+def test_voyage_is_the_standard_preset():
+    """Shipped presets are copied in once, and VOYAGE loads on startup unless
+    another preset is starred."""
+    import tempfile
+    from pathlib import Path
+
+    saved = xpresets.PRESETS_DIR, xpresets._STARTUP_FILE
+    xpresets.PRESETS_DIR = Path(tempfile.mkdtemp())
+    xpresets._STARTUP_FILE = xpresets.PRESETS_DIR / "_startup.txt"
+    try:
+        xpresets._ensure_default()
+        assert {"Default", "VOYAGE"} <= set(xpresets.list_presets())
+        assert xpresets.get_startup_preset() == "VOYAGE"
+        assert xpresets.load("VOYAGE")["ps_palette_name"] == "Peach & Teal"
+
+        # A preset saved over a built-in is not overwritten on the next start.
+        xpresets.save("VOYAGE", {**xpresets.DEFAULTS, "ps_bar_gap": 0.4})
+        xpresets._ensure_default()
+        assert xpresets.load("VOYAGE")["ps_bar_gap"] == 0.4
+
+        xpresets.set_startup_preset("Default")
+        assert xpresets.get_startup_preset() == "Default", "the star must win"
+    finally:
+        xpresets.PRESETS_DIR, xpresets._STARTUP_FILE = saved
+
+
+def test_app_starts_on_voyage():
+    if xpresets.get_startup_preset() != "VOYAGE":
+        return  # someone starred another preset in this checkout
+    app = _loaded_app()
+    assert app.session_state["ps_palette_name"] == "Peach & Teal"
+
+
 def test_preset_migrates_legacy_x_numeric():
     """Presets saved when x_numeric was a checkbox must still load."""
     name = "__pytest_legacy__"
