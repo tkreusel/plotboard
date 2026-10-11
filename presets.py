@@ -36,6 +36,8 @@ DEFAULTS: dict[str, object] = {
     "ps_show_points":      True,
     "ps_point_size":       4.0,
     "ps_point_alpha":      0.7,
+    "ps_point_custom":     False,      # pick a colour per treatment for the points
+    "ps_point_colors":     [],
     # Labels
     "ps_title":            "",
     "ps_xlabel":           "Condition",
@@ -65,11 +67,7 @@ DEFAULTS: dict[str, object] = {
     "ps_trendline":        "none",
     "ps_trendline_source": "means",
     "ps_trendline_mode":   "overlay",
-    "ps_sigmoid":          False,
-    "ps_sig_alow":         0.0,
-    "ps_sig_ahigh":        1.0,
-    "ps_sig_p50":          1.0,
-    "ps_sig_dp":           1.0,
+    "ps_sigmoids":         [],         # [{id, alow, ahigh, p50, dp, color}, ...]
     # Tick marks
     "ps_tick_direction":    "out",
     "ps_major_tick_length": 4.0,
@@ -188,6 +186,13 @@ def load(name: str) -> dict:
     path = PRESETS_DIR / f"{_sanitise(name)}.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     clean = {k: _migrate(k, v) for k, v in data.items() if k in DEFAULTS}
+    if data.get("ps_sigmoid") and "ps_sigmoids" not in data:
+        # Older presets held a single sigmoid curve in five flat keys.
+        clean["ps_sigmoids"] = [{
+            "id": 0, "color": "#000000",
+            **{k: data.get(f"ps_sig_{k}", v) for k, v in
+               (("alow", 0.0), ("ahigh", 1.0), ("p50", 1.0), ("dp", 1.0))},
+        }]
     return {**DEFAULTS, **clean}
 
 

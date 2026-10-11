@@ -113,12 +113,14 @@ def test_roundtrip_redraws_the_same_figure():
 
 
 def test_roundtrip_line_plot_with_sigmoid():
-    settings = {**presets.DEFAULTS, "ps_plot_type": "line", "ps_sigmoid": True,
+    settings = {**presets.DEFAULTS, "ps_plot_type": "line",
+                "ps_sigmoids": [{"id": 0, "alow": 0.0, "ahigh": 1.0, "p50": 1.0,
+                                 "dp": 1.0, "color": "#112233"}],
                 "ps_xmin_str": "0.05"}
     df = _frame()
     kwargs = _kwargs(settings, df)
     _, df2, kwargs2 = _roundtrip(df, kwargs, settings)
-    assert kwargs2["sigmoid"] == kwargs["sigmoid"]
+    assert kwargs["sigmoids"] and kwargs2["sigmoids"] == kwargs["sigmoids"]
     assert _png(df2, kwargs2) == _png(df, kwargs), "redrawn line plot differs"
 
 

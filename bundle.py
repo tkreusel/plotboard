@@ -89,9 +89,11 @@ def load(bundle: dict) -> tuple[pd.DataFrame, dict]:
 
     kwargs = dict(bundle["make_figure_kwargs"])
     # JSON turns tuples into lists; the plotter unpacks these as pairs/quads.
-    for key in ("ylim", "xlim", "sigmoid"):
+    for key in ("ylim", "xlim"):
         if kwargs.get(key) is not None:
             kwargs[key] = tuple(kwargs[key])
+    if kwargs.get("sigmoids") is not None:
+        kwargs["sigmoids"] = [tuple(c) for c in kwargs["sigmoids"]]
     if bundle.get("stats"):
         kwargs["stat_results"] = pd.DataFrame.from_records(bundle["stats"])
     return df, kwargs
