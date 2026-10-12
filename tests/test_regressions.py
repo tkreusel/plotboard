@@ -620,3 +620,42 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_histogram_overlays_treatments_on_shared_bins():
+    """One patch group per treatment, same bin edges, in the treatment's colour;
+    the value label lands on x and the statistic on y."""
+    frame = pd.DataFrame({
+        "condition": ["a", "a", "b", "b"] * 3,
+        "treatment": ["t1"] * 6 + ["t2"] * 6,
+        "value": [1.0, 2.0, 2.5, 3.0, 1.5, 2.2, 3.0, 4.0, 5.0, 4.5, 3.5, 6.0],
+    })
+    kwargs = figspec.draw_kwargs({**xpresets.DEFAULTS, "ps_plot_type": "hist",
+                                  "ps_hist_bins": 5, "ps_run_stats": True},
+                                 n_treatments=2, title="t", ylabel="signal",
+                                 stat_results=pd.DataFrame({"x": [1]}))
+    assert "stat_results" not in kwargs
+    ax = plotter.make_figure(frame, **kwargs).axes[0]
+    assert len(ax.patches) == 10
+    assert ax.get_xlabel() == "signal" and ax.get_ylabel() == "Count"
+    first, second = ax.patches[:5], ax.patches[5:]
+    assert [p.get_x() for p in first] == [p.get_x() for p in second]
+    assert sum(p.get_height() for p in first) == 6
+
+
+def test_histogram_fraction_stat_sums_to_one_per_treatment():
+    """"fraction" is the share of a treatment's values per bin (unlike "density",
+    which divides by the linear bin width and distorts a log axis)."""
+    frame = pd.DataFrame({
+        "condition": ["a"] * 12,
+        "treatment": ["t1"] * 4 + ["t2"] * 8,
+        "value": [1.0, 2.0, 2.5, 3.0, 1.5, 2.2, 3.0, 4.0, 5.0, 4.5, 3.5, 6.0],
+    })
+    kwargs = figspec.draw_kwargs({**xpresets.DEFAULTS, "ps_plot_type": "hist",
+                                  "ps_hist_bins": 5, "ps_hist_stat": "fraction"},
+                                 n_treatments=2, title="t", ylabel="signal")
+    ax = plotter.make_figure(frame, **kwargs).axes[0]
+    assert ax.get_ylabel() == "Fraction per bin"
+    first, second = ax.patches[:5], ax.patches[5:]
+    assert abs(sum(p.get_height() for p in first) - 1) < 1e-9
+    assert abs(sum(p.get_height() for p in second) - 1) < 1e-9

@@ -132,7 +132,7 @@ def draw_plot(
     df: pd.DataFrame,
     *,
     # Plot type
-    plot_type: str = "bar",          # "bar" | "box" | "violin" | "line"
+    plot_type: str = "bar",          # "bar" | "box" | "violin" | "line" | "hist"
     error_bar: str = "sd",           # "sd" | "sem" | "ci95"  (bar/line only)
     cap_size: float = 0.08,
     show_points: bool = True,
@@ -178,6 +178,10 @@ def draw_plot(
     trendline_source: str = "means",  # "means" | "replicates"
     trendline_mode: str = "overlay",  # "overlay" | "replace"
     sigmoids: list[tuple[float, float, float, float, str]] = (),  # (A_low, A_high, P50, dP, color)
+    # Histogram (treatments overlaid, values pooled across conditions)
+    hist_bins: int = 20,
+    hist_stat: str = "count",         # "count" | "density" | "fraction"
+    hist_alpha: float = 0.5,
     # Ticks
     tick_direction: str = "out",      # "in" | "out" | "inout"
     major_tick_length: float = 4.0,
@@ -246,6 +250,7 @@ def draw_plot(
             line_width=line_width, marker_style=marker_style, marker_size=marker_size,
             x_suffix=x_suffix, trendline=trendline, trendline_source=trendline_source,
             trendline_mode=trendline_mode, sigmoids=sigmoids,
+            hist_bins=hist_bins, hist_stat=hist_stat, hist_alpha=hist_alpha,
             tick_direction=tick_direction,
             major_tick_length=major_tick_length, major_tick_width=major_tick_width,
             minor_ticks_y=minor_ticks_y, minor_ticks_x=minor_ticks_x,
@@ -268,8 +273,8 @@ def _draw(
     legend_inside, fs, tick_rotation, tick_fs, spines, spine_width, y_format,
     x_numeric, x_tick_interval, y_tick_interval, error_style, line_width,
     marker_style, marker_size, x_suffix, trendline, trendline_source,
-    trendline_mode, sigmoids, tick_direction, major_tick_length, major_tick_width,
-    minor_ticks_y, minor_ticks_x, minor_tick_length, minor_tick_width,
+    trendline_mode, sigmoids, hist_bins, hist_stat, hist_alpha, tick_direction,
+    major_tick_length, major_tick_width, minor_ticks_y, minor_ticks_x, minor_tick_length, minor_tick_width,
     stat_results, show_ns, test_mode, compare_axis, bracket_linewidth,
     bracket_fontsize, show_pvalue, show_significance, show_fold_change,
 ) -> None:
@@ -300,6 +305,24 @@ def _draw(
         minor_tick_length=minor_tick_length, minor_tick_width=minor_tick_width,
         log_scale=log_scale,
     )
+
+    if plot_type == "hist":
+        # The value axis is x, so the value label (the "y label" setting) goes
+        # there and y reports the bin statistic. Log scale applies to x.
+        _draw_hist(
+            ax, df, treatments=treatments, palette=palette, bins=hist_bins,
+            stat=hist_stat, alpha=hist_alpha, log_scale=log_scale,
+            edge_width=bar_edge_width, edge_color=bar_edge_color,
+        )
+        _draw_legend(ax, treatments, palette=palette, legend_title=legend_title,
+                     show_legend=show_legend, legend_inside=legend_inside, fs=fs,
+                     use_patches=True)
+        style_kw.update(xlabel=ylabel,
+                        ylabel={"density": "Density", "fraction": "Fraction per bin"}.get(hist_stat, "Count"),
+                        log_scale=False)
+        _style_axes(ax, rotate_x=False, **style_kw)
+        _freeze_fonts(ax, font_family)
+        return
 
     if plot_type == "line":
         _draw_line(
@@ -405,6 +428,37 @@ def _draw_categorical(
                        width=elem_width, cut=0)
     else:
         raise ValueError(f"Unknown plot_type: {plot_type!r}")
+
+
+def _draw_hist(
+    ax, df, *, treatments, palette, bins, stat, alpha, log_scale, edge_width,
+    edge_color,
+) -> None:
+    """One histogram per treatment on shared bin edges, drawn on top of each other.
+
+    Values are pooled across conditions (hide conditions with the condition
+    filter). Shared edges are what make the overlay comparable; "density"
+    normalises each treatment to unit area so unequal replicate counts do too.
+    "density" divides by the linear bin width, which exaggerates the low end on
+    a log x-axis; "fraction" (share of the treatment's values per bin) does not.
+    """
+    values = df["value"].dropna().to_numpy(dtype=float)
+    if values.size == 0:
+        return
+    lo, hi = values.min(), values.max()
+    if log_scale:
+        ax.set_xscale("log")
+        edges = np.geomspace(lo, hi, bins + 1) if hi > lo else np.array([lo / 2, lo * 2])
+    else:
+        edges = np.histogram_bin_edges(values, bins=bins)
+    for i, treatment in enumerate(treatments):
+        vals = df.loc[df["treatment"] == treatment, "value"].dropna().to_numpy(dtype=float)
+        if vals.size == 0:
+            continue
+        weights = np.full(vals.size, 1.0 / vals.size) if stat == "fraction" else None
+        ax.hist(vals, bins=edges, density=(stat == "density"), weights=weights,
+                facecolor=matplotlib.colors.to_rgba(palette[i % len(palette)], alpha),
+                edgecolor=edge_color, linewidth=edge_width, zorder=3)
 
 
 def _draw_line(

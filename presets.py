@@ -68,6 +68,10 @@ DEFAULTS: dict[str, object] = {
     "ps_trendline_source": "means",
     "ps_trendline_mode":   "overlay",
     "ps_sigmoids":         [],         # [{id, alow, ahigh, p50, dp, color}, ...]
+    # Histogram
+    "ps_hist_bins":        20,
+    "ps_hist_stat":        "count",    # "count" | "density" | "fraction"
+    "ps_hist_alpha":       0.5,
     # Tick marks
     "ps_tick_direction":    "out",
     "ps_major_tick_length": 4.0,

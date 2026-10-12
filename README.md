@@ -95,6 +95,7 @@ The presets in `default_presets/` (**Default** and **VOYAGE**) are copied into `
 | **box+strip** | Box-and-whisker plot (IQR box, median line, no outlier markers) overlaid with data points. |
 | **violin+strip** | Kernel density violin overlaid with data points. |
 | **line+scatter** | One line per treatment across conditions, with an error band or bars and optional trend line. |
+| **hist** | Histogram of the values, one per treatment, overlaid on shared bins with adjustable opacity. Values are pooled across the shown conditions. Choose the number of bins and count or density on the y axis. The x axis takes the *Y-axis label*; statistics are not available. |
 
 Settings are kept per plot type: switching to another type and back restores what you had.
 

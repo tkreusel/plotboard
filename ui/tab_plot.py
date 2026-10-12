@@ -17,10 +17,10 @@ import plotter
 import settings
 import utils
 
-PLOT_TYPES = ["bar+strip", "box+strip", "violin+strip", "line+scatter"]
+PLOT_TYPES = ["bar+strip", "box+strip", "violin+strip", "line+scatter", "hist"]
 _PLOT_TYPE_LABELS = {
     "bar+strip": "Bar", "box+strip": "Box",
-    "violin+strip": "Violin", "line+scatter": "Line",
+    "violin+strip": "Violin", "line+scatter": "Line", "hist": "Histogram",
 }
 _ERROR_BAR_LABELS = {"sd": "SD", "sem": "SEM", "ci95": "95 % CI"}
 _X_MODE_LABELS = {
@@ -69,8 +69,11 @@ def render(ctx: dataio.DataContext) -> None:
     base_type = str(settings.get("ps_plot_type") or "bar+strip").split("+")[0]
 
     _render_colors(ctx)
-    _render_marks(base_type)
-    _render_points(ctx, base_type)
+    if base_type == "hist":
+        _render_histogram()
+    else:
+        _render_marks(base_type)
+        _render_points(ctx, base_type)
     _render_figure_size()
 
     if base_type == "line":
@@ -140,6 +143,26 @@ def _render_marks(base_type: str) -> None:
                  format_func=_ERROR_BAR_LABELS.get)
     with col_cap:
         st.slider("Cap size", 0.0, 0.3, key="ps_cap_size", step=0.01)
+
+
+def _render_histogram() -> None:
+    st.divider()
+    st.caption("Histogram")
+    st.caption("Treatments are overlaid on shared bins; values are pooled "
+               "across the shown conditions.")
+    col_bins, col_stat = st.columns(2)
+    with col_bins:
+        st.number_input("Bins", min_value=2, max_value=200, key="ps_hist_bins",
+                        step=1)
+    with col_stat:
+        st.radio("Y axis", ["count", "density", "fraction"], key="ps_hist_stat",
+                 format_func=str.capitalize)
+    st.slider("Opacity", 0.1, 1.0, key="ps_hist_alpha", step=0.05)
+    col_width, col_colour = st.columns(2)
+    with col_width:
+        st.slider("Edge width", 0.0, 3.0, key="ps_bar_edge_width", step=0.1)
+    with col_colour:
+        st.color_picker("Edge colour", key="ps_bar_edge_color")
 
 
 def _render_points(ctx: dataio.DataContext, base_type: str) -> None:

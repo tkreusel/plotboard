@@ -49,7 +49,7 @@ def _render_limits(base_type: str) -> None:
         st.text_input("Y min", key="ps_ymin_str", placeholder="auto")
     with col_max:
         st.text_input("Y max", key="ps_ymax_str", placeholder="auto")
-    if base_type == "line":
+    if base_type in ("line", "hist"):
         col_xmin, col_xmax = st.columns(2)
         with col_xmin:
             st.text_input("X min", key="ps_xmin_str", placeholder="auto")
