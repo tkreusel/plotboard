@@ -5,10 +5,27 @@ utils.py — Color palettes and figure export helpers.
 from __future__ import annotations
 
 import io
+import re
+from datetime import datetime
 
 import matplotlib
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?")
+
+
+def parse_date(label: object) -> float | None:
+    """ISO date(time) label → matplotlib date number, else None."""
+    text = str(label).strip()
+    if not _ISO_DATE_RE.fullmatch(text):
+        return None
+    try:
+        return float(mdates.date2num(datetime.fromisoformat(text)))
+    except ValueError:
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Color palettes

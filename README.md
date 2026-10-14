@@ -114,7 +114,7 @@ Settings are kept per plot type: switching to another type and back restores wha
 
 | Control | Description |
 |---|---|
-| **X-axis spacing** | **Auto-detect** (default) uses proportional spacing when every condition label starts with a number (`0`, `2 h`, `100 nM`), otherwise equal spacing. **Numeric** and **Categorical** force one or the other. |
+| **X-axis spacing** | **Auto-detect** (default) uses proportional spacing when every condition label starts with a number (`0`, `2 h`, `100 nM`), otherwise equal spacing. Excel date cells (or ISO labels like `2024-01-15`) are placed on a date axis; X min/max accept ISO dates and X interval is in days. **Numeric** and **Categorical** force one or the other. |
 | **X-axis unit suffix** | Appended to tick labels that are a bare number, e.g. ` h`. |
 | **X / Y tick interval** | Fixed spacing between ticks; 0 = automatic. |
 | **Error style** | Shaded band or error bars. |

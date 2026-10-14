@@ -17,6 +17,7 @@ pd.DataFrame with columns: condition (str), treatment (str), replicate (int), va
 from __future__ import annotations
 
 import io
+from datetime import datetime
 from pathlib import Path
 from typing import Union
 
@@ -114,7 +115,11 @@ def _parse_prism_sheet(ws) -> pd.DataFrame:
         cond_raw = row[0] if row else None
         if cond_raw is None or str(cond_raw).strip() == "":
             continue
-        condition = str(cond_raw).strip()
+        if isinstance(cond_raw, datetime):  # Excel date cell -> ISO label
+            midnight = cond_raw == datetime.combine(cond_raw.date(), datetime.min.time())
+            condition = (cond_raw.date() if midnight else cond_raw).isoformat()
+        else:
+            condition = str(cond_raw).strip()
 
         for start_col, end_col, treatment in treatment_spans:
             rep = 1

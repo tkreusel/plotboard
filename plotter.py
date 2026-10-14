@@ -27,6 +27,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 
 import matplotlib
+import matplotlib.dates as mdates
 import matplotlib.patches as mpatches
 import matplotlib.ticker as mticker
 import numpy as np
@@ -34,6 +35,8 @@ import pandas as pd
 import seaborn as sns
 from cycler import cycler
 from matplotlib.figure import Figure
+
+from utils import parse_date
 
 matplotlib.rcParams["pdf.fonttype"] = 42   # editable text in PDF/Illustrator
 matplotlib.rcParams["svg.fonttype"] = "none"
@@ -124,7 +127,17 @@ def x_axis_is_numeric(conditions, mode: object = "auto") -> bool:
     """
     if mode is False or mode == "categorical":
         return False
-    return all(parse_leading_number(c) is not None for c in conditions)
+    return x_values(conditions) is not None
+
+
+def x_values(conditions) -> tuple[list[float], bool] | None:
+    """``(positions, is_date)`` when every label is an ISO date or leads with a
+    number, else None.  Dates win: "2024-01-05" would otherwise read as 2024."""
+    for parse, is_date in ((parse_date, True), (parse_leading_number, False)):
+        vals = [parse(c) for c in conditions]
+        if all(v is not None for v in vals):
+            return vals, is_date
+    return None
 
 
 def draw_plot(
@@ -339,8 +352,10 @@ def _draw(
                      show_legend=show_legend, legend_inside=legend_inside, fs=fs,
                      use_patches=True)
         _style_axes(ax, rotate_x=False, **style_kw)
-        if minor_ticks_x > 0 and x_axis_is_numeric(conditions, x_numeric):
+        user_minor = minor_ticks_x > 0 and x_axis_is_numeric(conditions, x_numeric)
+        if user_minor:
             ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(minor_ticks_x + 1))
+        if user_minor or isinstance(ax.xaxis.get_minor_locator(), mdates.DayLocator):
             ax.tick_params(axis="x", which="minor", direction=tick_direction,
                            length=minor_tick_length, width=minor_tick_width,
                            bottom=True)
@@ -469,9 +484,10 @@ def _draw_line(
 ) -> None:
     """One line per treatment, conditions along x."""
     numeric_x = x_axis_is_numeric(conditions, x_numeric)
+    is_date = False
 
     if numeric_x:
-        x_vals = [parse_leading_number(c) for c in conditions]
+        x_vals, is_date = x_values(conditions)
         # The label already carries its unit if it has one; x_suffix only
         # applies to labels that are a bare number.
         tick_labels = [
@@ -579,7 +595,22 @@ def _draw_line(
         # the whole range rather than only where data points happen to fall.
         if x_tick_interval and x_tick_interval > 0:
             ax.xaxis.set_major_locator(mticker.MultipleLocator(x_tick_interval))
-        if x_suffix:
+        if is_date:
+            if x_tick_interval and x_tick_interval > 0:  # interval is in days
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+            else:
+                # One tick per month over a few months; auto would add "15"s.
+                span = max(x_vals) - min(x_vals)
+                monthly = 45 <= span <= 400
+                loc = mdates.MonthLocator() if monthly else mdates.AutoDateLocator()
+                fmt = mdates.ConciseDateFormatter(loc)
+                if monthly:
+                    fmt.zero_formats[1] = "%b"  # January says "Jan", not the year
+                    # Mid-month stays as an unlabelled tick mark.
+                    ax.xaxis.set_minor_locator(mdates.DayLocator(bymonthday=15))
+                ax.xaxis.set_major_locator(loc)
+                ax.xaxis.set_major_formatter(fmt)
+        elif x_suffix:
             ax.xaxis.set_major_formatter(
                 mticker.FuncFormatter(lambda v, _: f"{v:g}{x_suffix}")
             )

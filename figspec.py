@@ -78,7 +78,7 @@ def resolve_fonts(s: dict) -> tuple[dict | None, float, float | None]:
 
 
 def parse_limit(value: Any) -> float | None:
-    """``"1.5"`` → 1.5 ; blank or non-numeric → None."""
+    """``"1.5"`` → 1.5 ; ISO date → date number ; blank/other → None."""
     if value is None:
         return None
     text = str(value).strip()
@@ -87,7 +87,7 @@ def parse_limit(value: Any) -> float | None:
     try:
         return float(text)
     except ValueError:
-        return None
+        return utils.parse_date(text)  # date axes take ISO dates
 
 
 def axis_limits(s: dict) -> tuple[tuple | None, tuple | None]:

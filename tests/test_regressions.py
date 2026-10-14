@@ -444,6 +444,15 @@ def test_font_family_is_applied():
         f"y-label rendered as {axes.yaxis.label.get_fontname()!r}")
 
 
+def test_date_labels_are_a_date_axis():
+    import plotter
+    import figspec
+    vals, is_date = plotter.x_values(["2024-01-01", "2024-01-15"])
+    assert is_date and vals[1] - vals[0] == 14
+    assert plotter.x_values(["0", "2 h"]) == ([0.0, 2.0], False)
+    assert figspec.parse_limit("2024-01-15") == vals[1]
+
+
 def test_multiple_sigmoid_curves_with_own_colours():
     """Each curve in ps_sigmoids is drawn as its own line in its own colour;
     a legacy single-curve preset loads as a one-element list."""
