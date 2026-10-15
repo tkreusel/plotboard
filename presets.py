@@ -30,7 +30,8 @@ DEFAULTS: dict[str, object] = {
     # Y-axis
     "ps_log_scale":        False,
     "ps_show_grid":        False,
-    "ps_error_bar":        "sd",
+    "ps_error_bar":        "sd",       # "sd" | "sem" | "ci95" | "column"
+    "ps_error_cols":       {},         # {treatment: error treatment} when "column"
     "ps_cap_size":         0.08,
     # Data points
     "ps_show_points":      True,

@@ -192,6 +192,11 @@ def update(values: dict[str, Any], *, mark_touched: bool = True) -> None:
         for key in [k for k in st.session_state if str(k).startswith("sg_")]:
             del st.session_state[key]
 
+    # Error-column pickers re-seed from a restored map the same way.
+    if "ps_error_cols" in values:
+        for key in [k for k in st.session_state if str(k).startswith("ec_")]:
+            del st.session_state[key]
+
     # Keep the colour pickers in step with a restored palette.
     for list_key, prefix in _COLOR_LISTS:
         for i, colour in enumerate(values.get(list_key) or []):
@@ -206,6 +211,12 @@ def set_custom_colors(colors: list[str], key: str = "ps_custom_colors") -> None:
     st.session_state[key] = list(colors)
     store = st.session_state.setdefault(STORE_KEY, {})
     store[key] = list(colors)
+
+
+def set_error_cols(mapping: dict[str, str]) -> None:
+    """Store the error-column map (no widget of its own; see set_custom_colors)."""
+    st.session_state["ps_error_cols"] = dict(mapping)
+    st.session_state.setdefault(STORE_KEY, {})["ps_error_cols"] = dict(mapping)
 
 
 def set_sigmoids(curves: list[dict]) -> None:

@@ -134,6 +134,33 @@ def apply_selection(
     return out
 
 
+def apply_error_columns(
+    df: pd.DataFrame, mapping: dict[str, str] | None,
+) -> pd.DataFrame:
+    """Use treatments' columns as the ``error`` of other treatments' points.
+
+    *mapping* is ``{plotted treatment: treatment holding its errors}``.  The
+    error treatments are dropped from the plotted data; the value of each at a
+    condition (mean of its replicates) becomes ``error`` for the treatment it
+    is mapped to.  Plotted treatments without a mapping get NaN.  Unknown
+    names are ignored, and *df* is returned unchanged when nothing would be left.
+    """
+    known = set(categories(df["treatment"]))
+    mapping = {t: e for t, e in (mapping or {}).items()
+               if t != e and t in known and e in known}
+    sources = set(mapping.values())
+    if not sources or sources >= known:
+        return df
+    err = {(str(c), str(t)): v for (c, t), v in
+           df[df["treatment"].isin(sources)]
+           .groupby(["condition", "treatment"], observed=True)["value"].mean().items()}
+    out = df[~df["treatment"].isin(sources)].copy()
+    out["error"] = [err.get((str(c), mapping.get(str(t))), float("nan"))
+                    for c, t in zip(out["condition"], out["treatment"])]
+    out["treatment"] = out["treatment"].cat.remove_unused_categories()
+    return out
+
+
 def apply_renames(
     df: pd.DataFrame,
     cond_rename: dict[str, str],

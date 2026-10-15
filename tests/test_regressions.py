@@ -591,6 +591,40 @@ def test_panels_filter_treatments_independently(tmp_path=None):
     assert app.session_state[treat_key(0)] == ["A", "C"], "selection not restored"
 
 
+def test_error_columns_give_each_treatment_its_own_error_bars():
+    """Each treatment's mapped column becomes its per-point error, in bar and
+    line plots; the mapped columns are not plotted."""
+    frame = pd.DataFrame({
+        "condition": pd.Categorical(["a", "b"] * 4, ordered=True),
+        "treatment": pd.Categorical(
+            ["m1"] * 2 + ["sd1"] * 2 + ["m2"] * 2 + ["sd2"] * 2, ordered=True),
+        "value": [10.0, 20.0, 1.0, 2.0, 30.0, 40.0, 3.0, 4.0],
+    })
+    mapping = {"m1": "sd1", "m2": "sd2"}
+    out = dataio.apply_error_columns(frame, mapping)
+    assert list(out["treatment"].cat.categories) == ["m1", "m2"]
+    assert out["error"].tolist() == [1.0, 2.0, 3.0, 4.0]
+    assert dataio.apply_error_columns(frame, {"m1": "nope"}) is frame
+    only = dataio.apply_error_columns(frame, {"m1": "sd1"})
+    assert set(only["treatment"].cat.categories) == {"m1", "m2", "sd2"}
+    assert only[only["treatment"] == "m2"]["error"].isna().all()
+
+    s = {**xpresets.DEFAULTS, "ps_error_bar": "column", "ps_error_cols": mapping}
+    assert figspec.error_columns(s) == mapping
+    assert figspec.error_columns({**s, "ps_error_bar": "sd"}) is None
+    for plot_type in ("bar+strip", "line+scatter"):
+        kwargs = figspec.draw_kwargs({**s, "ps_plot_type": plot_type,
+                                      "ps_error_style": "bars"},
+                                     n_treatments=2, title="t", ylabel="v")
+        ax = plotter.make_figure(out, **kwargs).axes[0]
+        # errorbar draws a LineCollection with one vertical segment per point
+        spans = sorted(
+            round(float(seg[1][1] - seg[0][1]), 6)
+            for c in ax.collections if type(c).__name__ == "LineCollection"
+            for seg in c.get_segments() if abs(seg[0][0] - seg[1][0]) < 1e-9)
+        assert spans == [2.0, 4.0, 6.0, 8.0], (plot_type, spans)
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------

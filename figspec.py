@@ -107,6 +107,13 @@ def figure_size(s: dict) -> dict:
     }
 
 
+def error_columns(s: dict) -> dict[str, str] | None:
+    """``{treatment: error treatment}`` when error bars come from columns."""
+    if s.get("ps_error_bar") != "column":
+        return None
+    return dict(s.get("ps_error_cols") or {})
+
+
 def base_plot_type(s: dict) -> str:
     """``"bar+strip"`` → ``"bar"``."""
     return str(s.get("ps_plot_type", "bar+strip")).split("+")[0]

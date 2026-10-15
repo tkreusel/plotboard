@@ -173,7 +173,8 @@ if not data_out["selected_conditions"] or not data_out["selected_treatments"]:
     st.stop()
 
 df = dataio.apply_selection(
-    ctx.df, data_out["selected_conditions"], data_out["treatments"])
+    dataio.apply_error_columns(ctx.df, figspec.error_columns(current)),
+    data_out["selected_conditions"], data_out["treatments"])
 conditions = [c for c in data_out["conditions"]
               if c in set(data_out["selected_conditions"])]
 treatments = dataio.categories(df["treatment"])
@@ -288,7 +289,7 @@ with notes_slot:
             "Widen it, shrink the fonts, or put the legend inside the plot "
             "(Text tab) — otherwise labels may be clipped on export."
         )
-    if dataio.min_replicates(df) < 2:
+    if current["ps_error_bar"] != "column" and dataio.min_replicates(df) < 2:
         st.caption("⚠️ Some groups have fewer than 2 replicates — error bars "
                    "and statistical tests are skipped for those groups.")
 

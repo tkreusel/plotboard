@@ -127,6 +127,7 @@ def _build_zip(ctx: dataio.DataContext) -> None:
             frame = dataio.load_sheet(ctx.file_bytes, ctx.key, sheet)
             if frame.empty:
                 continue
+            frame = dataio.apply_error_columns(frame, figspec.error_columns(current))
             # Batch output goes through the same spec builder as the preview,
             # so axis limits, tick styling and line options are no longer
             # silently dropped from the exported figures.

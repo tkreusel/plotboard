@@ -22,7 +22,8 @@ _PLOT_TYPE_LABELS = {
     "bar+strip": "Bar", "box+strip": "Box",
     "violin+strip": "Violin", "line+scatter": "Line", "hist": "Histogram",
 }
-_ERROR_BAR_LABELS = {"sd": "SD", "sem": "SEM", "ci95": "95 % CI"}
+_ERROR_BAR_LABELS = {"sd": "SD", "sem": "SEM", "ci95": "95 % CI",
+                     "column": "From column"}
 _X_MODE_LABELS = {
     "auto": "Auto-detect",
     "numeric": "Numeric (proportional spacing)",
@@ -72,7 +73,7 @@ def render(ctx: dataio.DataContext) -> None:
     if base_type == "hist":
         _render_histogram()
     else:
-        _render_marks(base_type)
+        _render_marks(ctx, base_type)
         _render_points(ctx, base_type)
     _render_figure_size()
 
@@ -118,7 +119,39 @@ def _render_colors(ctx: dataio.DataContext) -> None:
 # Marks
 # ---------------------------------------------------------------------------
 
-def _render_marks(base_type: str) -> None:
+def _render_error_bar(ctx: dataio.DataContext) -> None:
+    col_error, col_cap = st.columns(2)
+    with col_error:
+        mode = st.radio("Error bar", list(_ERROR_BAR_LABELS), key="ps_error_bar",
+                        format_func=_ERROR_BAR_LABELS.get)
+    with col_cap:
+        st.slider("Cap size", 0.0, 0.3, key="ps_cap_size", step=0.01)
+    if mode != "column":
+        return
+
+    st.caption("Error column per treatment")
+    stored = settings.get("ps_error_cols") or {}
+    chosen: dict[str, str] = {}
+    for treatment in ctx.treatments:
+        options = ["", *(t for t in ctx.treatments if t != treatment)]
+        # Keyed by name so a sheet change cannot carry one treatment's pick
+        # onto another; seeded from the stored map, and a name that is not on
+        # this sheet falls back to "none".
+        key = f"ec_{treatment}"
+        if st.session_state.get(key) not in options:
+            st.session_state[key] = (
+                stored.get(treatment) if stored.get(treatment) in options else "")
+        pick = st.selectbox(
+            str(treatment), options, key=key,
+            format_func=lambda t: t or "— no error bar —",
+            help="The chosen treatment is not plotted; its value at each "
+                 "condition becomes this treatment's error bar.")
+        if pick:
+            chosen[treatment] = pick
+    settings.set_error_cols(chosen)
+
+
+def _render_marks(ctx: dataio.DataContext, base_type: str) -> None:
     if base_type == "line":
         return
 
@@ -137,12 +170,7 @@ def _render_marks(base_type: str) -> None:
     with col_colour:
         st.color_picker("Edge colour", key="ps_bar_edge_color")
 
-    col_error, col_cap = st.columns(2)
-    with col_error:
-        st.radio("Error bar", ["sd", "sem", "ci95"], key="ps_error_bar",
-                 format_func=_ERROR_BAR_LABELS.get)
-    with col_cap:
-        st.slider("Cap size", 0.0, 0.3, key="ps_cap_size", step=0.01)
+    _render_error_bar(ctx)
 
 
 def _render_histogram() -> None:
@@ -239,12 +267,7 @@ def _render_line_options(ctx: dataio.DataContext) -> None:
              format_func=lambda x: {"band": "Shaded band",
                                     "bars": "Error bars"}[x],
              horizontal=True)
-    col_error, col_cap = st.columns(2)
-    with col_error:
-        st.radio("Error bar", ["sd", "sem", "ci95"], key="ps_error_bar",
-                 format_func=_ERROR_BAR_LABELS.get)
-    with col_cap:
-        st.slider("Cap size", 0.0, 0.3, key="ps_cap_size", step=0.01)
+    _render_error_bar(ctx)
 
     col_line, col_marker = st.columns(2)
     with col_line:

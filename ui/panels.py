@@ -327,6 +327,7 @@ def _panel_spec(ctx: dataio.DataContext, panel: dict, index: int) -> dict:
         return {"mode": "plot", "df": frame, "config": {},
                 "label": panel.get("label", "")}
 
+    frame = dataio.apply_error_columns(frame, figspec.error_columns(panel))
     conditions = panel.get("cond_order") or dataio.categories(frame["condition"])
     treatments = panel.get("treat_order") or dataio.categories(frame["treatment"])
     selection = panel.get("filter") or conditions

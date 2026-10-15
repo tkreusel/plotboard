@@ -146,7 +146,8 @@ def draw_plot(
     *,
     # Plot type
     plot_type: str = "bar",          # "bar" | "box" | "violin" | "line" | "hist"
-    error_bar: str = "sd",           # "sd" | "sem" | "ci95"  (bar/line only)
+    error_bar: str = "sd",           # "sd" | "sem" | "ci95" | "column" (bar/line only;
+                                     # "column" reads df["error"], see dataio.apply_error_columns)
     cap_size: float = 0.08,
     show_points: bool = True,
     point_size: float = 4.0,
@@ -410,7 +411,7 @@ def _draw_categorical(
     if plot_type == "bar":
         sns.barplot(
             **common_kw,
-            errorbar=_errorbar_arg(error_bar),
+            errorbar=None if error_bar == "column" else _errorbar_arg(error_bar),
             capsize=cap_size,
             edgecolor=bar_edge_color,
             linewidth=bar_edge_width,
@@ -435,6 +436,9 @@ def _draw_categorical(
             for patch in ax.patches:
                 if isinstance(patch, mpatches.Rectangle) and patch.get_width() > 0:
                     patch.set_alpha(bar_alpha)
+        if error_bar == "column" and "error" in df.columns:
+            _draw_column_errors(ax, df, conditions=conditions,
+                                treatments=treatments, cap_size=cap_size)
     elif plot_type == "box":
         sns.boxplot(**common_kw, linewidth=bar_edge_width, fliersize=0,
                     width=elem_width)
@@ -443,6 +447,27 @@ def _draw_categorical(
                        width=elem_width, cut=0)
     else:
         raise ValueError(f"Unknown plot_type: {plot_type!r}")
+
+
+def _draw_column_errors(ax, df, *, conditions, treatments, cap_size) -> None:
+    """Error bars from ``df["error"]`` on seaborn's dodged bar centres (the
+    same 0.8-wide slots the strip dots use)."""
+    grouped = df.groupby(["condition", "treatment"], observed=True)[
+        ["value", "error"]].mean()
+    cells = {(str(c), str(t)): (m, e) for (c, t), m, e in grouped.itertuples(name=None)}
+    slot = 0.8 / len(treatments)
+    for i, treatment in enumerate(treatments):
+        xs, ms, es = [], [], []
+        for j, cond in enumerate(conditions):
+            m, e = cells.get((str(cond), str(treatment)), (np.nan, np.nan))
+            if not (np.isnan(m) or np.isnan(e)):
+                xs.append(j - 0.4 + (i + 0.5) * slot)
+                ms.append(m)
+                es.append(e)
+        if xs:
+            ax.errorbar(xs, ms, yerr=es, fmt="none", ecolor="0.26",
+                        elinewidth=1.2, capsize=cap_size * 80 / len(treatments),
+                        zorder=3)
 
 
 def _draw_hist(
@@ -505,6 +530,11 @@ def _draw_line(
         for (cond, treat), group in df.groupby(["condition", "treatment"], observed=True)
     }
     empty = np.empty(0)
+    col_errs: dict[tuple[str, str], float] = {}
+    if error_bar == "column" and "error" in df.columns:
+        col_errs = {(str(c), str(t)): float(e) for (c, t), e in
+                    df.groupby(["condition", "treatment"], observed=True)["error"]
+                    .mean().items()}
 
     for i, treatment in enumerate(treatments):
         color = palette[i % len(palette)]
@@ -522,7 +552,9 @@ def _draw_line(
                 errs.append(float("nan"))
                 continue
             means.append(float(np.mean(vals)))
-            if n > 1:
+            if error_bar == "column":
+                errs.append(col_errs.get((str(cond), str(treatment)), float("nan")))
+            elif n > 1:
                 sd = float(np.std(vals, ddof=1))
                 errs.append({"sd": sd,
                              "sem": sd / np.sqrt(n),
@@ -693,6 +725,12 @@ def _style_axes(
 
     if spines == "open":
         sns.despine(ax=ax, top=True, right=True)
+        # Arrow tips: markers pinned to the axes corners, so they follow any
+        # limits/scale and add nothing to autoscaling or the legend.
+        for xy, marker, side in (((1, 0), ">", "bottom"), ((0, 1), "^", "left")):
+            ax.plot(*xy, marker, transform=ax.transAxes, clip_on=False, zorder=10,
+                    color=ax.spines[side].get_edgecolor(), ms=5 + 2 * spine_width,
+                    scalex=False, scaley=False)
     elif spines == "none":
         sns.despine(ax=ax, top=True, right=True, left=True, bottom=True)
         ax.tick_params(left=False, bottom=False)
