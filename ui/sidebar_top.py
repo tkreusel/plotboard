@@ -9,6 +9,7 @@ were the hardest to reach while the Data tab held only two widgets.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -48,6 +49,27 @@ def render_file_input() -> tuple[bytes | None, str]:
         st.error("File not found or not an .xlsx file.")
 
     return None, ""
+
+
+def render_json_input() -> tuple[dict | None, str]:
+    """Uploader for a figure exported with "JSON (data + settings)".
+
+    Returns ``(parsed bundle, file name)``; ``(None, "")`` when nothing valid
+    is uploaded.  Whether it is a *plotboard* bundle is checked by
+    ``bundle.load``, which is only imported once the plotting stack is.
+    """
+    upload = st.file_uploader("…or open an exported figure (.json)", type=["json"])
+    if upload is None:
+        return None, ""
+    try:
+        data = json.loads(upload.getvalue())
+    except ValueError as exc:
+        st.error(f"Not valid JSON: {exc}")
+        return None, ""
+    if not isinstance(data, dict):
+        st.error("Not a plotboard figure export.")
+        return None, ""
+    return data, upload.name
 
 
 def render_sheet(all_sheets: list[str]) -> str:

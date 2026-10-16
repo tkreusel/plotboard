@@ -621,6 +621,11 @@ def _draw_line(
             with np.errstate(over="ignore"):  # exp overflow -> curve saturates at A_low
                 ys = a_low + (a_high - a_low) / (1.0 + np.exp((xs - p50) / dp))
             ax.plot(xs, ys, color=color, linewidth=line_width + 0.5, zorder=6)
+            ax.axvline(p50, color=color, linewidth=line_width, linestyle="--", zorder=5)
+            label = mdates.num2date(p50).strftime("%Y-%m-%d") if is_date else f"{p50:g}"
+            ax.annotate(label, xy=(p50, 0.98), xycoords=ax.get_xaxis_transform(),
+                        xytext=(-3, 0), textcoords="offset points", rotation=90,
+                        ha="right", va="top", color=color, fontsize=tick_fs)
 
     if numeric_x:
         # Continuous axis: let matplotlib place ticks at nice intervals across

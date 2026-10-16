@@ -47,8 +47,11 @@ warmup.start()
 
 with st.sidebar:
     file_bytes, file_label = sidebar_top.render_file_input()
+    # An uploaded figure export wins over the workbook; remove it (the x on the
+    # uploader) to get back to the workbook.
+    figure_json, json_label = sidebar_top.render_json_input()
 
-if file_bytes is None:
+if file_bytes is None and figure_json is None:
     # The full title only shows on the empty state; once a file is open the
     # figure takes the top of the page instead of a banner.
     st.title("🔬 Experimental Results Plotter")
@@ -92,6 +95,19 @@ for key, value in xpanel.PANEL_DEFAULTS.items():
 # Panel layout sliders default to their minimum too, so they need the same
 # push as the plot settings if the browser ever rebuilds them.
 settings.reassert(*xpanel.PANEL_DEFAULTS)
+
+if figure_json is not None:
+    # A figure export is already resolved (data, stats, every plot argument), so
+    # it is redrawn as-is and the sidebar settings are not involved.
+    try:
+        json_df, json_kwargs = xbundle.load(figure_json)
+        json_fig = plotter.make_figure(json_df, **json_kwargs)
+    except Exception as exc:
+        st.error(f"Could not draw '{json_label}': {exc}")
+    else:
+        st.pyplot(json_fig, width="content")
+        export.render_downloads(json_fig, json_label.removesuffix(".json"))
+    st.stop()
 
 
 # ---------------------------------------------------------------------------

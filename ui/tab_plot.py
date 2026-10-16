@@ -310,8 +310,29 @@ def _remove_sigmoid_cb(curve_id: int) -> None:
     settings.update({"ps_sigmoids": curves}, mark_touched=False)
 
 
+def _palette_colors() -> list[str]:
+    s = settings.snapshot()
+    if s.get("ps_palette_name") == "Custom":
+        return [c for c in (s.get("ps_custom_colors") or []) if c]
+    return utils.PALETTES[s.get("ps_palette_name")]
+
+
+def _pick_palette_cb(cid: int) -> None:
+    st.session_state[f"sg_{cid}_color"] = st.session_state[f"sg_{cid}_pal"]
+    st.session_state[f"sg_{cid}_pal"] = None  # menu stays a one-shot action
+
+
+def _color_by_palette_cb() -> None:
+    palette = _palette_colors() or utils.PALETTES["iGEM"]
+    for i, curve in enumerate(settings.get("ps_sigmoids") or []):
+        st.session_state[f"sg_{curve['id']}_color"] = palette[i % len(palette)]
+
+
 def _render_sigmoid_options() -> None:
     st.caption("Sigmoid curves")
+    st.button("Colour curves by palette", key="sg_recolor",
+              on_click=_color_by_palette_cb,
+              help="Curve 1 gets palette colour 1, curve 2 colour 2, …")
     st.caption("A(P) = A_low + (A_high − A_low) / (1 + exp((P − P50) / dP)); "
                "P is the x-axis value, so use a numeric x-axis.")
     chosen = []
@@ -332,7 +353,13 @@ def _render_sigmoid_options() -> None:
                 with cols[j % 2]:
                     vals[field] = st.number_input(label, key=f"sg_{cid}_{field}",
                                                   format="%g")
-            vals["color"] = st.color_picker("Colour", key=f"sg_{cid}_color")
+            palette = _palette_colors()
+            pal, pick = st.columns(2)
+            pal.selectbox("Palette colour", palette, index=None,
+                          key=f"sg_{cid}_pal", on_change=_pick_palette_cb, args=(cid,),
+                          format_func=lambda c: f"{palette.index(c) + 1}  {c}",
+                          placeholder="Pick…")
+            vals["color"] = pick.color_picker("Custom colour", key=f"sg_{cid}_color")
             chosen.append(vals)
     st.button("＋ Add sigmoid curve", key="sg_add", on_click=_add_sigmoid_cb)
 

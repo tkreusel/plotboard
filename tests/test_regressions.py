@@ -471,7 +471,7 @@ def test_multiple_sigmoid_curves_with_own_colours():
                                  **{k: v for k, v in kwargs.items() if k != "palette"})
     drawn = [ln.get_color() for ln in figure.axes[0].lines]
     assert "#ff0000" in drawn and "#00ff00" in drawn, drawn
-    assert len(figure.axes[0].lines) == len(base.axes[0].lines) + 2
+    assert len(figure.axes[0].lines) == len(base.axes[0].lines) + 4  # curve + P50 line each
 
     name = "__pytest_sigmoid__"
     path = xpresets.PRESETS_DIR / f"{name}.json"
