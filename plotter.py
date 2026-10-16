@@ -615,7 +615,17 @@ def _draw_line(
     # A(P) = A_low + (A_high - A_low) / (1 + exp((P - P50) / dP)), over the x data range.
     if len(x_vals) > 1 and max(x_vals) > min(x_vals):
         xs = np.linspace(min(x_vals), max(x_vals), 300)
-        for a_low, a_high, p50, dp, color in sigmoids:
+        # P50 labels stack downwards when their lines are too close to sit side by side.
+        level_at: dict[int, int] = {}
+        last_x: list[float] = []
+        for k in sorted((k for k, c in enumerate(sigmoids) if c[3] != 0),
+                        key=lambda k: sigmoids[k][2]):
+            lvl = next((i for i, x in enumerate(last_x)
+                        if sigmoids[k][2] - x >= 0.04 * (max(x_vals) - min(x_vals))),
+                       len(last_x))
+            last_x[lvl:lvl + 1] = [sigmoids[k][2]]
+            level_at[k] = lvl
+        for k, (a_low, a_high, p50, dp, color) in enumerate(sigmoids):
             if dp == 0:
                 continue
             with np.errstate(over="ignore"):  # exp overflow -> curve saturates at A_low
@@ -623,9 +633,10 @@ def _draw_line(
             ax.plot(xs, ys, color=color, linewidth=line_width + 0.5, zorder=6)
             ax.axvline(p50, color=color, linewidth=line_width, linestyle="--", zorder=5)
             label = mdates.num2date(p50).strftime("%Y-%m-%d") if is_date else f"{p50:g}"
+            step = len(label) * tick_fs * 0.65 + 4  # approx. label length in points
             ax.annotate(label, xy=(p50, 0.98), xycoords=ax.get_xaxis_transform(),
-                        xytext=(-3, 0), textcoords="offset points", rotation=90,
-                        ha="right", va="top", color=color, fontsize=tick_fs)
+                        xytext=(-3, -level_at[k] * step), textcoords="offset points",
+                        rotation=90, ha="right", va="top", color=color, fontsize=tick_fs)
 
     if numeric_x:
         # Continuous axis: let matplotlib place ticks at nice intervals across
