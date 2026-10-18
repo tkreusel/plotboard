@@ -200,7 +200,8 @@ def draw_plot(
     kde_bw: float = 1.0,              # multiplier on Scott's rule bandwidth
     kde_alpha: float = 0.6,
     kde_ridge: bool = True,           # one row per treatment, else overlaid
-    kde_overlap: float = 1.5,         # ridge only: tallest peak, in rows
+    kde_overlap: float = 1.5,         # ridge only: tallest peak height
+    kde_spacing: float = 1.0,         # ridge only: distance between rows; 0 = shared x axis
     # Ticks
     tick_direction: str = "out",      # "in" | "out" | "inout"
     major_tick_length: float = 4.0,
@@ -271,7 +272,7 @@ def draw_plot(
             trendline_mode=trendline_mode, sigmoids=sigmoids,
             hist_bins=hist_bins, hist_stat=hist_stat, hist_alpha=hist_alpha,
             kde_bw=kde_bw, kde_alpha=kde_alpha, kde_ridge=kde_ridge,
-            kde_overlap=kde_overlap,
+            kde_overlap=kde_overlap, kde_spacing=kde_spacing,
             tick_direction=tick_direction,
             major_tick_length=major_tick_length, major_tick_width=major_tick_width,
             minor_ticks_y=minor_ticks_y, minor_ticks_x=minor_ticks_x,
@@ -295,7 +296,7 @@ def _draw(
     x_numeric, x_tick_interval, y_tick_interval, error_style, line_width,
     marker_style, marker_size, x_suffix, trendline, trendline_source,
     trendline_mode, sigmoids, hist_bins, hist_stat, hist_alpha, kde_bw, kde_alpha,
-    kde_ridge, kde_overlap, tick_direction,
+    kde_ridge, kde_overlap, kde_spacing, tick_direction,
     major_tick_length, major_tick_width, minor_ticks_y, minor_ticks_x, minor_tick_length, minor_tick_width,
     stat_results, show_ns, test_mode, compare_axis, bracket_linewidth,
     bracket_fontsize, show_pvalue, show_significance, show_fold_change,
@@ -350,7 +351,7 @@ def _draw(
         # Same axes convention as the histogram: values on x, density on y.
         _draw_kde(
             ax, df, treatments=treatments, palette=palette, bw=kde_bw,
-            alpha=kde_alpha, ridge=kde_ridge, overlap=kde_overlap,
+            alpha=kde_alpha, ridge=kde_ridge, overlap=kde_overlap, spacing=kde_spacing,
             log_scale=log_scale, edge_width=bar_edge_width, edge_color=bar_edge_color,
         )
         _draw_legend(ax, treatments, palette=palette, legend_title=legend_title,
@@ -361,7 +362,11 @@ def _draw(
         _style_axes(ax, rotate_x=False, **style_kw)
         if kde_ridge:
             # After _style_axes so a y-format or tick interval cannot replace them.
-            ax.set_yticks(range(len(treatments)), [str(t) for t in reversed(treatments)])
+            if kde_spacing > 0:  # at 0 the rows coincide, so there is nothing to label
+                ax.set_yticks([k * kde_spacing for k in range(len(treatments))],
+                              [str(t) for t in reversed(treatments)])
+            else:
+                ax.set_yticks([])
             # No y axis: each row's baseline (drawn in _draw_kde) is its own x axis.
             ax.spines["left"].set_visible(False)
             ax.tick_params(axis="y", length=0)
@@ -534,7 +539,7 @@ def _draw_hist(
 
 
 def _draw_kde(
-    ax, df, *, treatments, palette, bw, alpha, ridge, overlap, log_scale,
+    ax, df, *, treatments, palette, bw, alpha, ridge, overlap, spacing, log_scale,
     edge_width, edge_color,
 ) -> None:
     """One Gaussian KDE per treatment, values pooled across conditions.
@@ -543,7 +548,8 @@ def _draw_kde(
     matches what the eye sees), which keeps unequal replicate counts
     comparable. With ``ridge`` the curves are stacked one row per treatment
     (first treatment on top) and scaled by the tallest peak; ``overlap`` is
-    that peak's height in rows.
+    that peak's height and ``spacing`` the distance between rows (0 = all
+    curves on one shared baseline).
     """
     from scipy.stats import gaussian_kde
 
@@ -567,16 +573,16 @@ def _draw_kde(
     n = len(treatments)
     scale = overlap / max(d.max() for _, _, d in curves) if ridge else 1.0
     for i, x, d in curves:
-        base = n - 1 - i if ridge else 0.0
+        base = (n - 1 - i) * spacing if ridge else 0.0
         top = base + d * scale
         z = 3 + i  # lower rows sit over the ones above, as in a ridgeline
         ax.fill_between(x, base, top, facecolor=matplotlib.colors.to_rgba(
             palette[i % len(palette)], alpha), edgecolor="none", zorder=z)
         ax.plot(x, top, color=edge_color, linewidth=edge_width, zorder=z)
     if ridge:
-        for row in range(n):
-            ax.axhline(row, color=edge_color, linewidth=edge_width, zorder=2.5)
-        ax.set_ylim(-0.05, n - 1 + overlap * 1.05)
+        for base in {k * spacing for k in range(n)}:
+            ax.axhline(base, color=edge_color, linewidth=edge_width, zorder=2.5)
+        ax.set_ylim(-0.05, (n - 1) * spacing + overlap * 1.05)
     else:
         ax.set_ylim(bottom=0)
 

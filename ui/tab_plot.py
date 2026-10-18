@@ -204,9 +204,12 @@ def _render_kde() -> None:
     st.slider("Smoothing", 0.2, 3.0, key="ps_kde_bw", step=0.1,
               help="Multiplier on the automatic (Scott) bandwidth.")
     if settings.get("ps_kde_ridge"):
+        st.slider("Row spacing", 0.0, 2.0, key="ps_kde_spacing", step=0.05,
+                  help="Distance between the curves. 0 puts them all on one "
+                       "shared x axis.")
         st.slider("Peak height", 0.5, 4.0, key="ps_kde_overlap", step=0.1,
-                  help="Height of the tallest peak in rows; above 1 the "
-                       "rows overlap.")
+                  help="Height of the tallest peak, in units of the default "
+                       "row spacing.")
     st.slider("Opacity", 0.1, 1.0, key="ps_kde_alpha", step=0.05)
     col_width, col_colour = st.columns(2)
     with col_width:

@@ -182,6 +182,7 @@ def draw_kwargs(
         kde_alpha=s.get("ps_kde_alpha", 0.6),
         kde_ridge=bool(s.get("ps_kde_ridge", True)),
         kde_overlap=float(s.get("ps_kde_overlap", 1.5)),
+        kde_spacing=float(s.get("ps_kde_spacing", 1.0)),
         sigmoids=[
             (c["alow"], c["ahigh"], c["p50"], c["dp"], c["color"], c.get("title", ""),
              c.get("style", "-"))

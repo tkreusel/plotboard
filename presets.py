@@ -78,6 +78,7 @@ DEFAULTS: dict[str, object] = {
     "ps_kde_alpha":        0.6,
     "ps_kde_ridge":        True,
     "ps_kde_overlap":      1.5,
+    "ps_kde_spacing":      1.0,
     # Tick marks
     "ps_tick_direction":    "out",
     "ps_major_tick_length": 4.0,
