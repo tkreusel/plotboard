@@ -37,10 +37,10 @@ def render(ctx: dataio.DataContext) -> dict:
     base_type = str(settings.get("ps_plot_type")).split("+")[0]
     result: dict = {"anova_table": None, "stat_results_all": None}
 
-    no_stats = base_type in ("line", "hist")
+    no_stats = base_type in ("line", "hist", "kde")
     if no_stats:
         st.info("Statistical annotations are not available for line plots "
-                "or histograms.")
+                "histograms or KDE plots.")
 
     run_stats = st.checkbox("Run statistical tests", key="ps_run_stats",
                             disabled=no_stats)

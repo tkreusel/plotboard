@@ -145,7 +145,7 @@ def draw_plot(
     df: pd.DataFrame,
     *,
     # Plot type
-    plot_type: str = "bar",          # "bar" | "box" | "violin" | "line" | "hist"
+    plot_type: str = "bar",          # "bar" | "box" | "violin" | "line" | "hist" | "kde"
     error_bar: str = "sd",           # "sd" | "sem" | "ci95" | "column" (bar/line only;
                                      # "column" reads df["error"], see dataio.apply_error_columns)
     cap_size: float = 0.08,
@@ -196,6 +196,11 @@ def draw_plot(
     hist_bins: int = 20,
     hist_stat: str = "count",         # "count" | "density" | "fraction"
     hist_alpha: float = 0.5,
+    # KDE (treatments as smoothed densities, values pooled across conditions)
+    kde_bw: float = 1.0,              # multiplier on Scott's rule bandwidth
+    kde_alpha: float = 0.6,
+    kde_ridge: bool = True,           # one row per treatment, else overlaid
+    kde_overlap: float = 1.5,         # ridge only: tallest peak, in rows
     # Ticks
     tick_direction: str = "out",      # "in" | "out" | "inout"
     major_tick_length: float = 4.0,
@@ -265,6 +270,8 @@ def draw_plot(
             x_suffix=x_suffix, trendline=trendline, trendline_source=trendline_source,
             trendline_mode=trendline_mode, sigmoids=sigmoids,
             hist_bins=hist_bins, hist_stat=hist_stat, hist_alpha=hist_alpha,
+            kde_bw=kde_bw, kde_alpha=kde_alpha, kde_ridge=kde_ridge,
+            kde_overlap=kde_overlap,
             tick_direction=tick_direction,
             major_tick_length=major_tick_length, major_tick_width=major_tick_width,
             minor_ticks_y=minor_ticks_y, minor_ticks_x=minor_ticks_x,
@@ -287,7 +294,8 @@ def _draw(
     legend_inside, fs, tick_rotation, tick_fs, spines, spine_width, y_format,
     x_numeric, x_tick_interval, y_tick_interval, error_style, line_width,
     marker_style, marker_size, x_suffix, trendline, trendline_source,
-    trendline_mode, sigmoids, hist_bins, hist_stat, hist_alpha, tick_direction,
+    trendline_mode, sigmoids, hist_bins, hist_stat, hist_alpha, kde_bw, kde_alpha,
+    kde_ridge, kde_overlap, tick_direction,
     major_tick_length, major_tick_width, minor_ticks_y, minor_ticks_x, minor_tick_length, minor_tick_width,
     stat_results, show_ns, test_mode, compare_axis, bracket_linewidth,
     bracket_fontsize, show_pvalue, show_significance, show_fold_change,
@@ -335,6 +343,30 @@ def _draw(
                         ylabel={"density": "Density", "fraction": "Fraction per bin"}.get(hist_stat, "Count"),
                         log_scale=False)
         _style_axes(ax, rotate_x=False, **style_kw)
+        _freeze_fonts(ax, font_family)
+        return
+
+    if plot_type == "kde":
+        # Same axes convention as the histogram: values on x, density on y.
+        _draw_kde(
+            ax, df, treatments=treatments, palette=palette, bw=kde_bw,
+            alpha=kde_alpha, ridge=kde_ridge, overlap=kde_overlap,
+            log_scale=log_scale, edge_width=bar_edge_width, edge_color=bar_edge_color,
+        )
+        _draw_legend(ax, treatments, palette=palette, legend_title=legend_title,
+                     show_legend=show_legend, legend_inside=legend_inside, fs=fs,
+                     use_patches=True)
+        style_kw.update(xlabel=ylabel, ylabel="" if kde_ridge else "Density",
+                        log_scale=False)
+        _style_axes(ax, rotate_x=False, **style_kw)
+        if kde_ridge:
+            # After _style_axes so a y-format or tick interval cannot replace them.
+            ax.set_yticks(range(len(treatments)), [str(t) for t in reversed(treatments)])
+            # No y axis: each row's baseline (drawn in _draw_kde) is its own x axis.
+            ax.spines["left"].set_visible(False)
+            ax.tick_params(axis="y", length=0)
+            for line in [l for l in ax.lines if l.get_marker() == "^"]:
+                line.remove()  # the "open" spines' y-arrow tip
         _freeze_fonts(ax, font_family)
         return
 
@@ -499,6 +531,54 @@ def _draw_hist(
         ax.hist(vals, bins=edges, density=(stat == "density"), weights=weights,
                 facecolor=matplotlib.colors.to_rgba(palette[i % len(palette)], alpha),
                 edgecolor=edge_color, linewidth=edge_width, zorder=3)
+
+
+def _draw_kde(
+    ax, df, *, treatments, palette, bw, alpha, ridge, overlap, log_scale,
+    edge_width, edge_color,
+) -> None:
+    """One Gaussian KDE per treatment, values pooled across conditions.
+
+    Each curve integrates to 1 (in log10 space on a log axis, so the shape
+    matches what the eye sees), which keeps unequal replicate counts
+    comparable. With ``ridge`` the curves are stacked one row per treatment
+    (first treatment on top) and scaled by the tallest peak; ``overlap`` is
+    that peak's height in rows.
+    """
+    from scipy.stats import gaussian_kde
+
+    curves = []  # (palette index, x, density)
+    for i, treatment in enumerate(treatments):
+        vals = df.loc[df["treatment"] == treatment, "value"].dropna().to_numpy(dtype=float)
+        if log_scale:
+            vals = np.log10(vals[vals > 0])
+        if vals.size < 2 or np.ptp(vals) == 0:  # KDE is undefined (singular)
+            continue
+        kde = gaussian_kde(vals)
+        kde.set_bandwidth(kde.factor * bw)
+        pad = 3 * kde.factor * vals.std(ddof=1)
+        grid = np.linspace(vals.min() - pad, vals.max() + pad, 400)
+        curves.append((i, 10 ** grid if log_scale else grid, kde(grid)))
+    if not curves:
+        return
+    if log_scale:
+        ax.set_xscale("log")
+
+    n = len(treatments)
+    scale = overlap / max(d.max() for _, _, d in curves) if ridge else 1.0
+    for i, x, d in curves:
+        base = n - 1 - i if ridge else 0.0
+        top = base + d * scale
+        z = 3 + i  # lower rows sit over the ones above, as in a ridgeline
+        ax.fill_between(x, base, top, facecolor=matplotlib.colors.to_rgba(
+            palette[i % len(palette)], alpha), edgecolor="none", zorder=z)
+        ax.plot(x, top, color=edge_color, linewidth=edge_width, zorder=z)
+    if ridge:
+        for row in range(n):
+            ax.axhline(row, color=edge_color, linewidth=edge_width, zorder=2.5)
+        ax.set_ylim(-0.05, n - 1 + overlap * 1.05)
+    else:
+        ax.set_ylim(bottom=0)
 
 
 def _draw_line(

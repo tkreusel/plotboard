@@ -17,10 +17,10 @@ import plotter
 import settings
 import utils
 
-PLOT_TYPES = ["bar+strip", "box+strip", "violin+strip", "line+scatter", "hist"]
+PLOT_TYPES = ["bar+strip", "box+strip", "violin+strip", "line+scatter", "hist", "kde"]
 _PLOT_TYPE_LABELS = {
     "bar+strip": "Bar", "box+strip": "Box",
-    "violin+strip": "Violin", "line+scatter": "Line", "hist": "Histogram",
+    "violin+strip": "Violin", "line+scatter": "Line", "hist": "Histogram", "kde": "KDE",
 }
 _ERROR_BAR_LABELS = {"sd": "SD", "sem": "SEM", "ci95": "95 % CI",
                      "column": "From column"}
@@ -72,6 +72,8 @@ def render(ctx: dataio.DataContext) -> None:
     _render_colors(ctx)
     if base_type == "hist":
         _render_histogram()
+    elif base_type == "kde":
+        _render_kde()
     else:
         _render_marks(ctx, base_type)
         _render_points(ctx, base_type)
@@ -191,6 +193,26 @@ def _render_histogram() -> None:
         st.slider("Edge width", 0.0, 3.0, key="ps_bar_edge_width", step=0.1)
     with col_colour:
         st.color_picker("Edge colour", key="ps_bar_edge_color")
+
+
+def _render_kde() -> None:
+    st.divider()
+    st.caption("KDE")
+    st.caption("Smoothed density per treatment; values are pooled across "
+               "the shown conditions.")
+    st.toggle("Ridgeline (one row per treatment)", key="ps_kde_ridge")
+    st.slider("Smoothing", 0.2, 3.0, key="ps_kde_bw", step=0.1,
+              help="Multiplier on the automatic (Scott) bandwidth.")
+    if settings.get("ps_kde_ridge"):
+        st.slider("Peak height", 0.5, 4.0, key="ps_kde_overlap", step=0.1,
+                  help="Height of the tallest peak in rows; above 1 the "
+                       "rows overlap.")
+    st.slider("Opacity", 0.1, 1.0, key="ps_kde_alpha", step=0.05)
+    col_width, col_colour = st.columns(2)
+    with col_width:
+        st.slider("Line width", 0.0, 3.0, key="ps_bar_edge_width", step=0.1)
+    with col_colour:
+        st.color_picker("Line colour", key="ps_bar_edge_color")
 
 
 def _render_points(ctx: dataio.DataContext, base_type: str) -> None:

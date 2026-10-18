@@ -22,10 +22,10 @@ def render(ctx: dataio.DataContext) -> None:
         help="Leave empty to use the file and sheet name.",
         on_change=settings.mark_touched, args=("ps_title",),
     )
-    is_hist = str(settings.get("ps_plot_type")).split("+")[0] == "hist"
+    is_hist = str(settings.get("ps_plot_type")).split("+")[0] in ("hist", "kde")
     st.text_input("X-axis label", key="ps_xlabel", disabled=is_hist,
-                  help="Histograms label the x axis with the Y-axis label "
-                       "below (the value) and the y axis with Count/Density."
+                  help="Histograms and KDE plots label the x axis with the Y-axis label "
+                       "below (the value) and the y axis with the statistic."
                        if is_hist else None)
     st.text_input(
         "Y-axis label", key="ps_ylabel", placeholder=ctx.sheet,

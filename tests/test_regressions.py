@@ -27,6 +27,7 @@ PROJECT_DIR = os.path.dirname(TESTS_DIR)
 sys.path.insert(0, PROJECT_DIR)
 os.chdir(PROJECT_DIR)
 
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
@@ -702,6 +703,27 @@ def test_histogram_fraction_stat_sums_to_one_per_treatment():
     first, second = ax.patches[:5], ax.patches[5:]
     assert abs(sum(p.get_height() for p in first) - 1) < 1e-9
     assert abs(sum(p.get_height() for p in second) - 1) < 1e-9
+
+
+def test_kde_ridgeline_rows_and_log_axis():
+    """One filled curve per treatment, first treatment on the top row; log scale
+    puts the curves on a log x axis."""
+    rng = np.random.default_rng(0)
+    frame = pd.DataFrame({
+        "condition": ["a"] * 80,
+        "treatment": ["t1"] * 40 + ["t2"] * 40,
+        "value": np.r_[10 ** rng.normal(2, .3, 40), 10 ** rng.normal(4, .5, 40)],
+    })
+    for log in (False, True):
+        kwargs = figspec.draw_kwargs({**xpresets.DEFAULTS, "ps_plot_type": "kde",
+                                      "ps_log_scale": log},
+                                     n_treatments=2, title="t", ylabel="signal")
+        ax = plotter.make_figure(frame, **kwargs).axes[0]
+        assert len(ax.collections) == 2
+        assert [t.get_text() for t in ax.get_yticklabels()] == ["t2", "t1"]
+        assert ax.get_xlabel() == "signal"
+        assert (ax.get_xscale() == "log") == log
+        assert ax.collections[0].get_paths()[0].vertices[:, 1].max() > 1  # t1 is the top row
 
 
 def test_sigmoid_title_adds_legend_entry():

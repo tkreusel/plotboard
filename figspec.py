@@ -178,6 +178,10 @@ def draw_kwargs(
         hist_bins=int(s.get("ps_hist_bins", 20)),
         hist_stat=s.get("ps_hist_stat", "count"),
         hist_alpha=s.get("ps_hist_alpha", 0.5),
+        kde_bw=float(s.get("ps_kde_bw", 1.0)),
+        kde_alpha=s.get("ps_kde_alpha", 0.6),
+        kde_ridge=bool(s.get("ps_kde_ridge", True)),
+        kde_overlap=float(s.get("ps_kde_overlap", 1.5)),
         sigmoids=[
             (c["alow"], c["ahigh"], c["p50"], c["dp"], c["color"], c.get("title", ""),
              c.get("style", "-"))
@@ -192,9 +196,9 @@ def draw_kwargs(
         minor_tick_width=s.get("ps_minor_tick_width", 0.6),
     )
 
-    # Significance brackets are meaningless on a line or histogram and are never
+    # Significance brackets are meaningless on a line, histogram or KDE plot and are never
     # produced for one, but guard anyway so a stale selection cannot leak in.
-    if stat_results is not None and not stat_results.empty and plot_type not in ("line", "hist"):
+    if stat_results is not None and not stat_results.empty and plot_type not in ("line", "hist", "kde"):
         kwargs.update(
             stat_results=stat_results,
             test_mode=s.get("ps_test_mode", "ttest"),

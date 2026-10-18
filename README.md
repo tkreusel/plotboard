@@ -96,6 +96,7 @@ The presets in `default_presets/` (**Default** and **VOYAGE**) are copied into `
 | **violin+strip** | Kernel density violin overlaid with data points. |
 | **line+scatter** | One line per treatment across conditions, with an error band or bars and optional trend line. |
 | **hist** | Histogram of the values, one per treatment, overlaid on shared bins with adjustable opacity. Values are pooled across the shown conditions. Choose the number of bins and count or density on the y axis. The x axis takes the *Y-axis label*; statistics are not available. |
+| **kde** | Gaussian kernel density estimate of the values, one per treatment, pooled across the shown conditions. Stacked as a ridgeline (treatment names on the y axis) or overlaid; adjustable smoothing, peak height and opacity. Works with log scale. The x axis takes the *Y-axis label*; statistics are not available. |
 
 Settings are kept per plot type: switching to another type and back restores what you had.
 
