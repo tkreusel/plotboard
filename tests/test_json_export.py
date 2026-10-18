@@ -150,10 +150,10 @@ def test_preset_part_loads_as_a_preset():
     assert set(loaded) == set(presets.DEFAULTS)
 
 
-def test_to_xlsx_roundtrips_the_data():
+def test_json_bytes_roundtrip_the_data():
     df = _frame(["10", "1", "0.1"])
     built = bundle.build(df, figure_kwargs={}, settings=presets.DEFAULTS, sheet="Nano")
-    back = dataio.load_sheet(bundle.to_xlsx(built), "x", "Nano")
+    back = dataio.load_sheet(bundle.to_json(built).encode(), "x", "Nano")
     key = ["condition", "treatment", "replicate"]
     a = df.astype({"condition": str, "treatment": str}).sort_values(key)
     b = back.astype({"condition": str, "treatment": str}).sort_values(key)

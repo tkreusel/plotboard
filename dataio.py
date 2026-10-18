@@ -14,6 +14,7 @@ Arguments prefixed with an underscore are excluded from that hashing.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -58,6 +59,17 @@ def file_key(file_bytes: bytes) -> str:
 # Cached loading
 # ---------------------------------------------------------------------------
 
+# An opened figure export is passed around as its JSON bytes instead of a
+# workbook: a workbook cannot hold it (Excel stops at 16384 columns, and one
+# replicate takes one column), a flow-cytometry histogram has tens of thousands.
+def _is_bundle(file_bytes: bytes) -> bool:
+    return file_bytes[:1] == b"{"
+
+
+def _bundle(file_bytes: bytes) -> dict:
+    return json.loads(file_bytes)
+
+
 @st.cache_resource(show_spinner="Opening workbook…", max_entries=3)
 def _workbook(_file_bytes: bytes, key: str):
     return xparser.load_workbook(_file_bytes)
@@ -65,11 +77,17 @@ def _workbook(_file_bytes: bytes, key: str):
 
 @st.cache_data(show_spinner=False)
 def sheet_names(_file_bytes: bytes, key: str) -> list[str]:
+    if _is_bundle(_file_bytes):
+        return [_bundle(_file_bytes)["source"].get("sheet") or "Data"]
     return xparser.sheet_names(_workbook(_file_bytes, key))
 
 
 @st.cache_data(show_spinner="Parsing sheet…")
 def load_sheet(_file_bytes: bytes, key: str, sheet: str) -> pd.DataFrame:
+    if _is_bundle(_file_bytes):
+        import bundle
+        df = bundle.load(_bundle(_file_bytes))[0]
+        return df[["condition", "treatment", "replicate", "value"]].dropna(subset=["value"])
     return xparser.parse_sheet(_workbook(_file_bytes, key), sheet)
 
 

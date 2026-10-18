@@ -99,18 +99,18 @@ for key, value in xpanel.PANEL_DEFAULTS.items():
 settings.reassert(*xpanel.PANEL_DEFAULTS)
 
 if figure_json is not None:
-    # An exported figure is opened like a workbook: its data becomes a one-sheet
-    # xlsx and its settings are loaded once, so the whole sidebar works on it.
-    # to_xlsx output differs byte-wise on every call (save timestamps), and the
-    # bytes are the file key, so it is built once per upload and kept.
+    # An exported figure is opened like a workbook: its JSON bytes stand in for
+    # the file (dataio reads them as a one-sheet workbook) and its settings are
+    # loaded once, so the whole sidebar works on it.
     applied = (json_label,
                dataio.file_key(json.dumps(figure_json, sort_keys=True).encode()))
     if st.session_state.get("_json_applied") != applied:
         try:
-            st.session_state["_json_xlsx"] = xbundle.to_xlsx(figure_json)
+            xbundle.load(figure_json)  # validates; dataio re-reads it from the bytes
         except Exception as exc:
             st.error(f"Could not open '{json_label}': {exc}")
             st.stop()
+        st.session_state["_json_xlsx"] = xbundle.to_json(figure_json).encode()
         st.session_state["_json_applied"] = applied
         kwargs = figure_json.get("make_figure_kwargs", {})
         # Title and y-label are not in the preset; they count as typed by the

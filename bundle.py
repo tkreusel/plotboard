@@ -27,14 +27,11 @@ JSON has no NaN, so missing numbers (an untestable p-value, say) are null.
 
 from __future__ import annotations
 
-import io
 import json
 import math
-import re
 from datetime import datetime, timezone
 from typing import Any
 
-import openpyxl
 import pandas as pd
 
 import dataio
@@ -100,39 +97,6 @@ def load(bundle: dict) -> tuple[pd.DataFrame, dict]:
     if bundle.get("stats"):
         kwargs["stat_results"] = pd.DataFrame.from_records(bundle["stats"])
     return df, kwargs
-
-
-def to_xlsx(bundle: dict) -> bytes:
-    """The bundle's data as a one-sheet workbook in the Prism grouped layout, so
-    the normal sidebar flow can open it.  Stats and the error column are not
-    carried over: the sidebar recomputes stats, and error treatments were
-    already folded into ``error`` at export time."""
-    if bundle.get("format") != FORMAT:
-        raise ValueError("not a plotboard figure export")
-    data = bundle["data"]
-    values: dict[tuple, list] = {}
-    for r in sorted(data["records"], key=lambda r: r.get("replicate") or 0):
-        if r["value"] is not None:
-            values.setdefault((str(r["condition"]), str(r["treatment"])),
-                              []).append(r["value"])
-    treatments = [str(t) for t in data["treatment_order"]]
-    width = {t: max([len(v) for (_, tt), v in values.items() if tt == t] or [1])
-             for t in treatments}
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = re.sub(r"[\[\]:*?/\\]", "_", bundle["source"].get("sheet") or "Data")[:31]
-    ws.append(["Condition"] + [c for t in treatments
-                               for c in [t] + [None] * (width[t] - 1)])
-    for cond in data["condition_order"]:
-        row = [str(cond)]
-        for t in treatments:
-            vals = values.get((str(cond), t), [])
-            row += vals + [None] * (width[t] - len(vals))
-        ws.append(row)
-    out = io.BytesIO()
-    wb.save(out)
-    return out.getvalue()
 
 
 def _clean(value: Any) -> Any:
