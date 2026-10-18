@@ -68,7 +68,7 @@ DEFAULTS: dict[str, object] = {
     "ps_trendline":        "none",
     "ps_trendline_source": "means",
     "ps_trendline_mode":   "overlay",
-    "ps_sigmoids":         [],         # [{id, alow, ahigh, p50, dp, color}, ...]
+    "ps_sigmoids":         [],         # [{id, alow, ahigh, p50, dp, color, title, style}, ...]
     # Histogram
     "ps_hist_bins":        20,
     "ps_hist_stat":        "count",    # "count" | "density" | "fraction"

@@ -702,3 +702,31 @@ def test_histogram_fraction_stat_sums_to_one_per_treatment():
     first, second = ax.patches[:5], ax.patches[5:]
     assert abs(sum(p.get_height() for p in first) - 1) < 1e-9
     assert abs(sum(p.get_height() for p in second) - 1) < 1e-9
+
+
+def test_sigmoid_title_adds_legend_entry():
+    frame = pd.DataFrame({
+        "condition": ["0", "1", "2", "3"] * 2, "treatment": ["a"] * 4 + ["b"] * 4,
+        "value": [1.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 5.0],
+    })
+    def legend(title):
+        fig = plotter.make_figure(
+            frame, palette=utils.get_palette("iGEM", 2), plot_type="line",
+            sigmoids=[(0, 1, 1, 1, "#ff0000", title)])
+        return [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert legend("fit") == ["a", "b", "fit"]
+    assert legend("") == ["a", "b"]
+
+
+def test_sigmoid_linestyle():
+    frame = pd.DataFrame({
+        "condition": ["0", "1", "2", "3"], "treatment": ["a"] * 4,
+        "value": [1.0, 2.0, 3.0, 4.0],
+    })
+    for curve, expected in [((0, 1, 1, 1, "#ff0000", "", ":"), ":"),
+                            ((0, 1, 1, 1, "#ff0000"), "-")]:  # old 5-tuple
+        fig = plotter.make_figure(frame, palette=utils.get_palette("iGEM", 1),
+                                  plot_type="line", sigmoids=[curve])
+        (line,) = [ln for ln in fig.axes[0].lines if ln.get_color() == "#ff0000"
+                   and ln.get_linestyle() != "--"]
+        assert line.get_linestyle() == expected, line.get_linestyle()

@@ -32,6 +32,8 @@ imports happen in the background while the user picks a file.
 
 from __future__ import annotations
 
+import json
+
 import streamlit as st
 
 import warmup
@@ -78,6 +80,7 @@ import dataio  # noqa: E402
 import figspec  # noqa: E402
 import panel as xpanel  # noqa: E402
 import plotter  # noqa: E402
+import presets  # noqa: E402
 import settings  # noqa: E402
 from ui import export, panels, preview, stats_table, tab_axes  # noqa: E402
 from ui import tab_data, tab_plot, tab_stats, tab_text  # noqa: E402
@@ -88,7 +91,6 @@ from ui import tab_data, tab_plot, tab_stats, tab_text  # noqa: E402
 # ---------------------------------------------------------------------------
 
 settings.ensure_startup_preset()
-settings.hydrate()
 
 for key, value in xpanel.PANEL_DEFAULTS.items():
     st.session_state.setdefault(key, value)
@@ -97,18 +99,31 @@ for key, value in xpanel.PANEL_DEFAULTS.items():
 settings.reassert(*xpanel.PANEL_DEFAULTS)
 
 if figure_json is not None:
-    # A figure export is already resolved (data, stats, every plot argument), so
-    # it is redrawn as-is and the sidebar settings are not involved.
-    try:
-        json_df, json_kwargs = xbundle.load(figure_json)
-        json_fig = plotter.make_figure(json_df, **json_kwargs)
-    except Exception as exc:
-        st.error(f"Could not draw '{json_label}': {exc}")
-    else:
-        st.pyplot(json_fig, width="content")
-        export.render_downloads(json_fig, json_label.removesuffix(".json"))
-    st.stop()
+    # An exported figure is opened like a workbook: its data becomes a one-sheet
+    # xlsx and its settings are loaded once, so the whole sidebar works on it.
+    # to_xlsx output differs byte-wise on every call (save timestamps), and the
+    # bytes are the file key, so it is built once per upload and kept.
+    applied = (json_label,
+               dataio.file_key(json.dumps(figure_json, sort_keys=True).encode()))
+    if st.session_state.get("_json_applied") != applied:
+        try:
+            st.session_state["_json_xlsx"] = xbundle.to_xlsx(figure_json)
+        except Exception as exc:
+            st.error(f"Could not open '{json_label}': {exc}")
+            st.stop()
+        st.session_state["_json_applied"] = applied
+        kwargs = figure_json.get("make_figure_kwargs", {})
+        # Title and y-label are not in the preset; they count as typed by the
+        # user (touched) so they stay instead of following the sheet name.
+        texts = {k: kwargs[k] for k in ("title", "ylabel") if kwargs.get(k)}
+        settings.update({**presets.DEFAULTS, **figure_json.get("preset", {}),
+                         **{f"ps_{k}": v for k, v in texts.items()}},
+                        mark_touched=False)
+        settings.mark_touched(*(f"ps_{k}" for k in texts))
+    file_bytes, file_label = st.session_state["_json_xlsx"], json_label
 
+
+settings.hydrate()
 
 # ---------------------------------------------------------------------------
 # Load the sheet

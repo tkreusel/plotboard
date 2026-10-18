@@ -1,0 +1,359 @@
+{
+  "format": "plotboard-figure",
+  "version": 1,
+  "source": {
+    "file": "Rohdaten_ITV-Auswertung_Anteil-intakter-GVs_2026-10-15_Repeats_heute_+_E._coli.json",
+    "sheet": "Repeats heute + E. coli",
+    "exported": "2026-10-16T19:42:00+00:00"
+  },
+  "data": {
+    "condition_order": [
+      "0.25",
+      "0.5",
+      "0.75",
+      "1",
+      "1.25",
+      "1.5",
+      "1.75",
+      "2",
+      "2.25",
+      "2.5",
+      "2.75",
+      "3",
+      "3.25",
+      "3.5",
+      "3.75",
+      "4",
+      "4.25",
+      "4.5",
+      "4.75",
+      "5",
+      "5.25",
+      "5.5",
+      "5.75"
+    ],
+    "treatment_order": [
+      "9 Repeats"
+    ],
+    "columns": [
+      "condition",
+      "treatment",
+      "replicate",
+      "value"
+    ],
+    "records": [
+      {
+        "condition": "0.25",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.9975
+      },
+      {
+        "condition": "0.5",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.9961
+      },
+      {
+        "condition": "0.75",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.9891
+      },
+      {
+        "condition": "1",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.9849
+      },
+      {
+        "condition": "1.25",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.9863
+      },
+      {
+        "condition": "1.5",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.9737
+      },
+      {
+        "condition": "1.75",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.9555
+      },
+      {
+        "condition": "2",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.9359
+      },
+      {
+        "condition": "2.25",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.8968
+      },
+      {
+        "condition": "2.5",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.8436
+      },
+      {
+        "condition": "2.75",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.796
+      },
+      {
+        "condition": "3",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.7093
+      },
+      {
+        "condition": "3.25",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.6113
+      },
+      {
+        "condition": "3.5",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.4938
+      },
+      {
+        "condition": "3.75",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.379
+      },
+      {
+        "condition": "4",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.2713
+      },
+      {
+        "condition": "4.25",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.1776
+      },
+      {
+        "condition": "4.5",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.13
+      },
+      {
+        "condition": "4.75",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.0894
+      },
+      {
+        "condition": "5",
+        "treatment": "9 Repeats",
+        "replicate": 1,
+        "value": 0.0768
+      }
+    ]
+  },
+  "stats": null,
+  "make_figure_kwargs": {
+    "fig_width": 11.0,
+    "fig_height": 6.0,
+    "ylim": null,
+    "xlim": null,
+    "plot_type": "line",
+    "error_bar": "column",
+    "cap_size": 0.08,
+    "show_points": true,
+    "point_size": 4.0,
+    "point_alpha": 0.7,
+    "point_colors": null,
+    "log_scale": false,
+    "show_grid": false,
+    "palette": [
+      "#F5AB7F"
+    ],
+    "bar_edge_width": 0.6,
+    "bar_edge_color": "#000000",
+    "bar_alpha": 1.0,
+    "bar_gap": 0.0,
+    "title": "",
+    "xlabel": "Pressure [bar]",
+    "ylabel": "Portion of intact GVs [a.u.]",
+    "legend_title": "",
+    "show_legend": true,
+    "legend_inside": true,
+    "font_family": "sans-serif",
+    "font_scale": 1.0,
+    "fontsizes": null,
+    "tick_rotation": 40,
+    "tick_fontsize": null,
+    "spines": "open",
+    "spine_width": 1.0,
+    "y_format": "auto",
+    "x_numeric": "auto",
+    "x_tick_interval": 0.0,
+    "y_tick_interval": 0.0,
+    "error_style": "bars",
+    "line_width": 1.5,
+    "marker_style": "o",
+    "marker_size": 6.0,
+    "x_suffix": "",
+    "trendline": "none",
+    "trendline_source": "means",
+    "trendline_mode": "overlay",
+    "hist_bins": 20,
+    "hist_stat": "count",
+    "hist_alpha": 0.5,
+    "sigmoids": [
+      [
+        0.0,
+        1.0,
+        3.4748,
+        0.5583,
+        "#F5AB7F",
+        "",
+        "-"
+      ],
+      [
+        0.0,
+        1.0,
+        3.876,
+        0.6904,
+        "#adadad",
+        "Wildtype GvpC",
+        ":"
+      ],
+      [
+        0.0,
+        1.0,
+        2.8933,
+        0.5407,
+        "#adadad",
+        "No GvpC",
+        "--"
+      ]
+    ],
+    "tick_direction": "out",
+    "major_tick_length": 4.0,
+    "major_tick_width": 0.8,
+    "minor_ticks_y": 0,
+    "minor_ticks_x": 0,
+    "minor_tick_length": 2.0,
+    "minor_tick_width": 0.6
+  },
+  "preset": {
+    "ps_plot_type": "line+scatter",
+    "ps_log_scale": false,
+    "ps_show_grid": false,
+    "ps_error_bar": "column",
+    "ps_error_cols": {},
+    "ps_cap_size": 0.08,
+    "ps_show_points": true,
+    "ps_point_size": 4.0,
+    "ps_point_alpha": 0.7,
+    "ps_point_custom": false,
+    "ps_point_colors": [],
+    "ps_xlabel": "Pressure [bar]",
+    "ps_ylabel": "Portion of intact GVs [a.u.]",
+    "ps_leg_title": "",
+    "ps_show_legend": true,
+    "ps_legend_inside": true,
+    "ps_palette_name": "Peach & Teal",
+    "ps_custom_colors": [],
+    "ps_bar_edge_width": 0.6,
+    "ps_bar_edge_color": "#000000",
+    "ps_bar_alpha": 1.0,
+    "ps_bar_gap": 0.0,
+    "ps_fig_width": 11.0,
+    "ps_fig_height": 6.0,
+    "ps_x_numeric": "auto",
+    "ps_x_suffix": "",
+    "ps_x_tick_interval": 0.0,
+    "ps_y_tick_interval": 0.0,
+    "ps_error_style": "bars",
+    "ps_line_width": 1.5,
+    "ps_marker_style": "o",
+    "ps_marker_size": 6.0,
+    "ps_trendline": "none",
+    "ps_trendline_source": "means",
+    "ps_trendline_mode": "overlay",
+    "ps_sigmoids": [
+      {
+        "id": 0,
+        "alow": 0.0,
+        "ahigh": 1.0,
+        "p50": 3.4748,
+        "dp": 0.5583,
+        "title": "",
+        "style": "-",
+        "color": "#F5AB7F"
+      },
+      {
+        "id": 4,
+        "alow": 0.0,
+        "ahigh": 1.0,
+        "p50": 3.876,
+        "dp": 0.6904,
+        "title": "Wildtype GvpC",
+        "style": ":",
+        "color": "#adadad"
+      },
+      {
+        "id": 5,
+        "alow": 0.0,
+        "ahigh": 1.0,
+        "p50": 2.8933,
+        "dp": 0.5407,
+        "title": "No GvpC",
+        "style": "--",
+        "color": "#adadad"
+      }
+    ],
+    "ps_hist_bins": 20,
+    "ps_hist_stat": "count",
+    "ps_hist_alpha": 0.5,
+    "ps_tick_direction": "out",
+    "ps_major_tick_length": 4.0,
+    "ps_major_tick_width": 0.8,
+    "ps_minor_ticks_y": 0,
+    "ps_minor_ticks_x": 0,
+    "ps_minor_tick_length": 2.0,
+    "ps_minor_tick_width": 0.6,
+    "ps_run_stats": false,
+    "ps_test_mode": "ttest",
+    "ps_compare_axis": "conditions",
+    "ps_show_pvalue": false,
+    "ps_show_significance": true,
+    "ps_show_fold_change": false,
+    "ps_bracket_linewidth": 0.9,
+    "ps_bracket_fontsize": 11.0,
+    "ps_font_family": "sans-serif",
+    "ps_font_mode": "Global scale",
+    "ps_font_scale": 1.0,
+    "ps_fs_title": 14,
+    "ps_fs_axis": 12,
+    "ps_fs_tick": 10,
+    "ps_fs_legend": 10,
+    "ps_y_format": "auto",
+    "ps_tick_rotation": 40,
+    "ps_tick_fontsize_adv": 10,
+    "ps_spines": "open",
+    "ps_spine_width": 1.0,
+    "ps_ymin_str": "",
+    "ps_ymax_str": "",
+    "ps_xmin_str": "",
+    "ps_xmax_str": "",
+    "ps_export_transparent": false,
+    "ps_export_bg": "#FFFFFF"
+  }
+}

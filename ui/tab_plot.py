@@ -297,10 +297,13 @@ _SIGMOID_FIELDS = (("alow", "A_low", 0.0), ("ahigh", "A_high", 1.0),
                    ("p50", "P50", 1.0), ("dp", "dP", 1.0))
 
 
+_LINE_STYLES = {"-": "Solid", "--": "Dashed", ":": "Dotted"}
+
+
 def _add_sigmoid_cb() -> None:
     curves = list(settings.get("ps_sigmoids") or [])
     new_id = max((c["id"] for c in curves), default=-1) + 1
-    curves.append({"id": new_id, "color": "#000000",
+    curves.append({"id": new_id, "color": "#000000", "title": "", "style": "-",
                    **{k: d for k, _, d in _SIGMOID_FIELDS}})
     settings.update({"ps_sigmoids": curves}, mark_touched=False)
 
@@ -317,9 +320,8 @@ def _palette_colors() -> list[str]:
     return utils.PALETTES[s.get("ps_palette_name")]
 
 
-def _pick_palette_cb(cid: int) -> None:
-    st.session_state[f"sg_{cid}_color"] = st.session_state[f"sg_{cid}_pal"]
-    st.session_state[f"sg_{cid}_pal"] = None  # menu stays a one-shot action
+def _pick_palette_cb(cid: int, colour: str) -> None:
+    st.session_state[f"sg_{cid}_color"] = colour
 
 
 def _color_by_palette_cb() -> None:
@@ -340,8 +342,9 @@ def _render_sigmoid_options() -> None:
         cid = curve["id"]
         # Keyed by curve id (not position) so removing one keeps the others'
         # values. Seeded from the stored list, like the custom palette pickers.
-        for field in ("color", *(f for f, _, _ in _SIGMOID_FIELDS)):
-            st.session_state.setdefault(f"sg_{cid}_{field}", curve[field])
+        for field in ("color", "title", "style", *(f for f, _, _ in _SIGMOID_FIELDS)):
+            st.session_state.setdefault(
+                f"sg_{cid}_{field}", curve.get(field, "-" if field == "style" else ""))
         with st.container(border=True):
             head, rm = st.columns([4, 1])
             head.markdown(f"**Curve {n}**")
@@ -353,13 +356,24 @@ def _render_sigmoid_options() -> None:
                 with cols[j % 2]:
                     vals[field] = st.number_input(label, key=f"sg_{cid}_{field}",
                                                   format="%g")
+            vals["title"] = st.text_input(
+                "Legend title", key=f"sg_{cid}_title",
+                help="Leave empty to keep this curve out of the legend")
+            vals["style"] = st.radio(
+                "Line style", list(_LINE_STYLES), key=f"sg_{cid}_style",
+                format_func=_LINE_STYLES.get, horizontal=True)
+            # Palette swatches: buttons recoloured via the CSS class Streamlit
+            # derives from each button's key.
             palette = _palette_colors()
-            pal, pick = st.columns(2)
-            pal.selectbox("Palette colour", palette, index=None,
-                          key=f"sg_{cid}_pal", on_change=_pick_palette_cb, args=(cid,),
-                          format_func=lambda c: f"{palette.index(c) + 1}  {c}",
-                          placeholder="Pick…")
-            vals["color"] = pick.color_picker("Custom colour", key=f"sg_{cid}_color")
+            st.markdown("<style>" + "".join(
+                f".st-key-sg_{cid}_sw{i} button{{background:{c};min-height:1.8rem;"
+                f"width:1.8rem;padding:0;border:1px solid #888}}"
+                for i, c in enumerate(palette)) + "</style>", unsafe_allow_html=True)
+            with st.container(horizontal=True, gap="xxsmall"):
+                for i, c in enumerate(palette):
+                    st.button("\u200b", key=f"sg_{cid}_sw{i}", help=f"{i + 1}  {c}",
+                              on_click=_pick_palette_cb, args=(cid, c))
+            vals["color"] = st.color_picker("Custom colour", key=f"sg_{cid}_color")
             chosen.append(vals)
     st.button("＋ Add sigmoid curve", key="sg_add", on_click=_add_sigmoid_cb)
 

@@ -179,7 +179,8 @@ def draw_kwargs(
         hist_stat=s.get("ps_hist_stat", "count"),
         hist_alpha=s.get("ps_hist_alpha", 0.5),
         sigmoids=[
-            (c["alow"], c["ahigh"], c["p50"], c["dp"], c["color"])
+            (c["alow"], c["ahigh"], c["p50"], c["dp"], c["color"], c.get("title", ""),
+             c.get("style", "-"))
             for c in (s.get("ps_sigmoids") or [])
         ],
         tick_direction=s.get("ps_tick_direction", "out"),

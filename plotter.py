@@ -191,7 +191,7 @@ def draw_plot(
     trendline: str = "none",       # "none"|"smooth"|"linear"|"poly2"|"poly3"|"exp"|"log"|"power"|"spline"
     trendline_source: str = "means",  # "means" | "replicates"
     trendline_mode: str = "overlay",  # "overlay" | "replace"
-    sigmoids: list[tuple[float, float, float, float, str]] = (),  # (A_low, A_high, P50, dP, color)
+    sigmoids: list[tuple] = (),  # (A_low, A_high, P50, dP, color, legend title, linestyle)
     # Histogram (treatments overlaid, values pooled across conditions)
     hist_bins: int = 20,
     hist_stat: str = "count",         # "count" | "density" | "fraction"
@@ -625,12 +625,17 @@ def _draw_line(
                        len(last_x))
             last_x[lvl:lvl + 1] = [sigmoids[k][2]]
             level_at[k] = lvl
-        for k, (a_low, a_high, p50, dp, color) in enumerate(sigmoids):
+        for k, (a_low, a_high, p50, dp, color, *extra) in enumerate(sigmoids):
+            # Older exports carry neither a title nor a style.
+            title = extra[0] if extra else ""
+            style = extra[1] if len(extra) > 1 else "-"
             if dp == 0:
                 continue
             with np.errstate(over="ignore"):  # exp overflow -> curve saturates at A_low
                 ys = a_low + (a_high - a_low) / (1.0 + np.exp((xs - p50) / dp))
-            ax.plot(xs, ys, color=color, linewidth=line_width + 0.5, zorder=6)
+            # A title puts the curve in the legend; no title leaves it out.
+            ax.plot(xs, ys, color=color, linewidth=line_width + 0.5, zorder=6,
+                    linestyle=style, label=title or "_nolegend_")
             ax.axvline(p50, color=color, linewidth=line_width, linestyle="--", zorder=5)
             label = mdates.num2date(p50).strftime("%Y-%m-%d") if is_date else f"{p50:g}"
             step = len(label) * tick_fs * 0.65 + 4  # approx. label length in points
@@ -691,6 +696,10 @@ def _draw_legend(ax, treatments, *, palette, legend_title, show_legend,
         handles = [mpatches.Patch(facecolor=palette[i % len(palette)], label=t)
                    for i, t in enumerate(treatments)]
         labels = list(treatments)
+        # Titled sigmoid curves are the only labelled artists on a line plot.
+        extra, extra_labels = ax.get_legend_handles_labels()
+        handles += extra
+        labels += extra_labels
     else:
         handles, labels = ax.get_legend_handles_labels()
         n = len(treatments)

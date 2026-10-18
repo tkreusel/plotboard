@@ -150,6 +150,43 @@ def test_preset_part_loads_as_a_preset():
     assert set(loaded) == set(presets.DEFAULTS)
 
 
+def test_to_xlsx_roundtrips_the_data():
+    df = _frame(["10", "1", "0.1"])
+    built = bundle.build(df, figure_kwargs={}, settings=presets.DEFAULTS, sheet="Nano")
+    back = dataio.load_sheet(bundle.to_xlsx(built), "x", "Nano")
+    key = ["condition", "treatment", "replicate"]
+    a = df.astype({"condition": str, "treatment": str}).sort_values(key)
+    b = back.astype({"condition": str, "treatment": str}).sort_values(key)
+    assert a[key + ["value"]].reset_index(drop=True).equals(
+        b[key + ["value"]].reset_index(drop=True))
+    assert dataio.categories(back["condition"]) == ["10", "1", "0.1"]
+
+
+def test_app_opens_a_json_with_the_full_sidebar():
+    """Open a bundle in the app (uploader stubbed): sidebar tabs appear and the
+    bundle's settings and title are applied."""
+    df = _frame()
+    settings = {**presets.DEFAULTS, "ps_fig_width": 7.0}
+    kwargs = {**_kwargs(settings, df), "title": "My title"}
+    built = bundle.build(df, figure_kwargs=kwargs, settings=settings, sheet="Nano")
+    from ui import sidebar_top
+    original = sidebar_top.render_json_input
+    sidebar_top.render_json_input = lambda: (json.loads(bundle.to_json(built)), "f.json")
+    try:
+        app = AppTest.from_file(os.path.join(PROJECT_DIR, "app.py"),
+                                default_timeout=180)
+        app.run()
+        assert not app.exception, [str(e.value)[:300] for e in app.exception]
+        assert not app.error, [e.value for e in app.error]
+        assert app.session_state["ps_fig_width"] == 7.0
+        assert app.text_input(key="ps_title").value == "My title"
+        app.session_state["ps_fig_width"] = 8.0
+        app.run()
+        assert not app.exception and app.session_state["ps_fig_width"] == 8.0
+    finally:
+        sidebar_top.render_json_input = original
+
+
 def test_rejects_other_json():
     try:
         bundle.load({"hello": 1})
