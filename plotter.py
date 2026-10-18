@@ -723,7 +723,7 @@ def _draw_line(
             ax.plot(xs, ys, color=color, linewidth=line_width + 0.5, zorder=6,
                     linestyle=style, label=title or "_nolegend_")
             ax.axvline(p50, color=color, linewidth=line_width, linestyle="--", zorder=5)
-            label = mdates.num2date(p50).strftime("%Y-%m-%d") if is_date else f"{p50:g}"
+            label = mdates.num2date(p50).strftime("%Y-%m-%d") if is_date else f"{p50:.2f}"
             step = len(label) * tick_fs * 0.65 + 4  # approx. label length in points
             ax.annotate(label, xy=(p50, 0.98), xycoords=ax.get_xaxis_transform(),
                         xytext=(-3, -level_at[k] * step), textcoords="offset points",
