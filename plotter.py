@@ -192,6 +192,8 @@ def draw_plot(
     trendline_source: str = "means",  # "means" | "replicates"
     trendline_mode: str = "overlay",  # "overlay" | "replace"
     sigmoids: list[tuple] = (),  # (A_low, A_high, P50, dP, color, legend title, linestyle)
+    line_styles: list[str] | None = None,  # per treatment ("-", "--", ":", …); not solid = open markers
+    curves: list[dict] = (),  # extra lines over the data: {x, y, color, linestyle, linewidth, label}
     # Histogram (treatments overlaid, values pooled across conditions)
     hist_bins: int = 20,
     hist_stat: str = "count",         # "count" | "density" | "fraction"
@@ -270,6 +272,7 @@ def draw_plot(
             line_width=line_width, marker_style=marker_style, marker_size=marker_size,
             x_suffix=x_suffix, trendline=trendline, trendline_source=trendline_source,
             trendline_mode=trendline_mode, sigmoids=sigmoids,
+            line_styles=line_styles, curves=curves,
             hist_bins=hist_bins, hist_stat=hist_stat, hist_alpha=hist_alpha,
             kde_bw=kde_bw, kde_alpha=kde_alpha, kde_ridge=kde_ridge,
             kde_overlap=kde_overlap, kde_spacing=kde_spacing,
@@ -295,7 +298,7 @@ def _draw(
     legend_inside, fs, tick_rotation, tick_fs, spines, spine_width, y_format,
     x_numeric, x_tick_interval, y_tick_interval, error_style, line_width,
     marker_style, marker_size, x_suffix, trendline, trendline_source,
-    trendline_mode, sigmoids, hist_bins, hist_stat, hist_alpha, kde_bw, kde_alpha,
+    trendline_mode, sigmoids, line_styles, curves, hist_bins, hist_stat, hist_alpha, kde_bw, kde_alpha,
     kde_ridge, kde_overlap, kde_spacing, tick_direction,
     major_tick_length, major_tick_width, minor_ticks_y, minor_ticks_x, minor_tick_length, minor_tick_width,
     stat_results, show_ns, test_mode, compare_axis, bracket_linewidth,
@@ -384,7 +387,7 @@ def _draw(
             x_numeric=x_numeric, x_suffix=x_suffix, x_tick_interval=x_tick_interval,
             tick_rotation=tick_rotation, tick_fs=tick_fs, trendline=trendline,
             trendline_source=trendline_source, trendline_mode=trendline_mode,
-            sigmoids=sigmoids,
+            sigmoids=sigmoids, line_styles=line_styles, curves=curves,
         )
         _draw_legend(ax, treatments, palette=palette, legend_title=legend_title,
                      show_legend=show_legend, legend_inside=legend_inside, fs=fs,
@@ -591,7 +594,7 @@ def _draw_line(
     ax, df, *, conditions, treatments, palette, error_bar, cap_size, show_points,
     point_size, point_alpha, point_colors, error_style, line_width, marker_style,
     marker_size, x_numeric, x_suffix, x_tick_interval, tick_rotation, tick_fs, trendline,
-    trendline_source, trendline_mode, sigmoids,
+    trendline_source, trendline_mode, sigmoids, line_styles=None, curves=(),
 ) -> None:
     """One line per treatment, conditions along x."""
     numeric_x = x_axis_is_numeric(conditions, x_numeric)
@@ -625,6 +628,9 @@ def _draw_line(
     for i, treatment in enumerate(treatments):
         color = palette[i % len(palette)]
         point_color = point_colors[i % len(point_colors)] if point_colors else color
+        style = line_styles[i % len(line_styles)] if line_styles else "-"
+        # A dashed series is told apart by open markers too (a points-only plot has no line to dash).
+        face = {} if style in ("-", "solid") else {"markerfacecolor": "white"}
         means: list[float] = []
         errs: list[float] = []
         all_pts_x: list[float] = []
@@ -659,11 +665,11 @@ def _draw_line(
         draw_line = trendline == "none" or trendline_mode == "overlay"
         marker = marker_style if marker_style != "none" else None
         if draw_line:
-            ax.plot(xv, m_arr, color=color, linewidth=line_width,
-                    marker=marker, markersize=marker_size, zorder=3)
+            ax.plot(xv, m_arr, color=color, linewidth=line_width, linestyle=style,
+                    marker=marker, markersize=marker_size, zorder=3, **face)
         elif marker:
             ax.plot(xv, m_arr, color=color, linewidth=0,
-                    marker=marker, markersize=marker_size, zorder=3)
+                    marker=marker, markersize=marker_size, zorder=3, **face)
 
         valid = ~np.isnan(e_arr) & ~np.isnan(m_arr)
         if valid.any():
@@ -728,6 +734,11 @@ def _draw_line(
             ax.annotate(label, xy=(p50, 0.98), xycoords=ax.get_xaxis_transform(),
                         xytext=(-3, -level_at[k] * step), textcoords="offset points",
                         rotation=90, ha="right", va="top", color=color, fontsize=tick_fs)
+
+    for c in curves:  # e.g. a model fitted elsewhere, dense x/y in the data's units
+        ax.plot(c["x"], c["y"], color=c.get("color", "black"), linestyle=c.get("linestyle", "--"),
+                linewidth=c.get("linewidth", line_width + 0.5), zorder=6,
+                label=c.get("label") or "_nolegend_")
 
     if numeric_x:
         # Continuous axis: let matplotlib place ticks at nice intervals across

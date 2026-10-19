@@ -26,7 +26,7 @@ dev = ["pytest>=8.0"]
 [tool.setuptools]
 py-modules = [
     "app", "bundle", "dataio", "figspec", "panel", "parser",
-    "plotter", "presets", "settings", "stats", "utils",
+    "plotter", "presets", "render", "settings", "stats", "utils",
 ]
 
 [tool.setuptools.packages.find]
