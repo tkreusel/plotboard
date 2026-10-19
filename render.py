@@ -5,6 +5,11 @@ render.py — draw a figure export (bundle.py) without the app, as SVG.
 
 prints one JSON object: {"svg", "W", "H", "L", "T", "PW", "PH", "xlim", "ylim", "ylog"}
 (a list of them for a list of bundles: one process, the imports paid once).
+
+    python render.py --serve 127.0.0.1:8768     # stay up: POST a bundle (or a list) as JSON, get the same back
+
+The server pays the imports once (a cold call is seconds, mostly imports). It renders one request at a
+time (matplotlib is not thread-safe) and has no auth: bind it to an address only trusted callers reach.
 W x H is the SVG's viewBox (pt); L, T, PW, PH the plot area (the axes box) in the same
 units, xlim / ylim the drawn axis ranges. With them a page can draw over the plot, e.g. a
 marker at x = L + PW * (v - xlim[0]) / (xlim[1] - xlim[0]).
@@ -51,8 +56,36 @@ def render(b: dict) -> dict:
             "ylog": ax.get_yscale() == "log"}
 
 
+def _answer(b):
+    return [render(x) for x in b] if isinstance(b, list) else render(b)
+
+
+def serve(addr: str) -> None:
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 < n <= 50_000_000:
+                    raise ValueError("need a JSON body of at most 50 MB")
+                code, out = 200, _answer(json.loads(self.rfile.read(n)))
+            except Exception as err:  # noqa: BLE001  (a bad bundle answers 400, the server stays up)
+                code, out = 400, {"error": f"{type(err).__name__}: {err}"}
+            body = json.dumps(out).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    host, port = addr.rsplit(":", 1)
+    HTTPServer((host, int(port)), Handler).serve_forever()
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[1] == "--serve":
+        serve(sys.argv[2])
     src = sys.argv[1] if len(sys.argv) > 1 else "-"
     text = sys.stdin.read() if src == "-" else Path(src).read_text(encoding="utf-8")
-    b = json.loads(text)
-    json.dump([render(x) for x in b] if isinstance(b, list) else render(b), sys.stdout)
+    json.dump(_answer(json.loads(text)), sys.stdout)

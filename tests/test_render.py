@@ -61,6 +61,31 @@ def test_cli_list():
     assert [x["ylog"] for x in r] == [False, True]
 
 
+def test_serve():
+    import json
+    import socket
+    import threading
+    import urllib.error
+    import urllib.request
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        port = sk.getsockname()[1]
+    threading.Thread(target=render.serve, args=(f"127.0.0.1:{port}",), daemon=True).start()
+    post = lambda body: urllib.request.urlopen(f"http://127.0.0.1:{port}/", data=body, timeout=60)  # noqa: E731
+    for _ in range(50):
+        try:
+            r = json.loads(post(json.dumps([_bundle()]).encode()).read())
+            break
+        except urllib.error.URLError:
+            __import__("time").sleep(0.1)
+    assert r[0]["xlim"] == [250, 2000]
+    try:
+        post(b"{}")
+        raise AssertionError("a bad bundle must answer 400")
+    except urllib.error.HTTPError as err:
+        assert err.code == 400 and "error" in json.loads(err.read())
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
