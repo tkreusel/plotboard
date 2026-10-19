@@ -23,6 +23,11 @@ _LAYOUTS = {
         {"treatment": "Treatment", "reference": "Reference",
          "condition": "Condition", "stars": "Sig."},
     ),
+    "vs_value": (
+        ["treatment", "condition", "test_value", "test", "p-adj", "stars", SHOW_COLUMN],
+        {"treatment": "Treatment", "condition": "Condition", "test_value": "vs",
+         "test": "Test", "p-adj": "p (uncorrected)", "stars": "Sig."},
+    ),
     "conditions": (
         ["treatment", "group_A", "group_B", "p-adj", "stars", SHOW_COLUMN],
         {"treatment": "Treatment", "group_A": "Condition A",
@@ -65,8 +70,9 @@ def render(
         lambda p: f"{p:.4f}" if p >= 0.0001 else "<0.0001")
     display[SHOW_COLUMN] = False
 
-    layout_key = compare_axis if compare_axis in ("cells", "treatments") else (
-        "ttest" if test_mode == "ttest" else "conditions")
+    layout_key = "vs_value" if test_mode == "vs_value" else (
+        compare_axis if compare_axis in ("cells", "treatments") else (
+            "ttest" if test_mode == "ttest" else "conditions"))
     columns, labels = _LAYOUTS[layout_key]
 
     table = display[[c for c in columns if c in display.columns]].rename(

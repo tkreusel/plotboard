@@ -6,12 +6,14 @@ import pandas as pd
 import streamlit as st
 
 import dataio
+import figspec
 import settings
 
 TEST_LABELS = {
     "ttest":         "t-test vs reference condition",
     "tukey":         "ANOVA + Tukey HSD (all pairs)",
     "two_way_anova": "Two-way ANOVA + Sidak",
+    "vs_value":      "Each bar vs a value (stars above the bar)",
 }
 AXIS_LABELS = {
     "conditions": "Conditions (per treatment)",
@@ -66,6 +68,13 @@ def render(ctx: dataio.DataContext) -> dict:
     with col_fold:
         st.checkbox("Show fold change", key="ps_show_fold_change")
 
+    if test_mode == "vs_value":
+        col_val, col_log = st.columns(2)
+        col_val.number_input("Test against", key="ps_test_value", step=0.1, format="%g")
+        col_log.checkbox("on log scale", key="ps_test_log",
+                         help="For ratios / fold changes: tests log(x) against log(value). "
+                              "One value per bar needs its SE from an error column (Plot tab).")
+
     if test_mode == "ttest":
         ref_cond = st.selectbox("Reference condition", ctx.conditions,
                                 key=f"{REF_COND_KEY}::{ctx.sheet}")
@@ -74,7 +83,9 @@ def render(ctx: dataio.DataContext) -> dict:
 
     try:
         anova_table, posthoc = dataio.run_stat_test(
-            ctx.file_bytes, ctx.key, ctx.sheet, test_mode, compare_axis, ref_cond
+            ctx.file_bytes, ctx.key, ctx.sheet, test_mode, compare_axis, ref_cond,
+            float(settings.get("ps_test_value")), bool(settings.get("ps_test_log")),
+            figspec.error_columns(settings.snapshot()),
         )
         result["anova_table"] = anova_table
         result["stat_results_all"] = posthoc

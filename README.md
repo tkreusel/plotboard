@@ -178,8 +178,9 @@ If the figure is too small for everything around the axes — easy to hit at a s
 | Control | Description |
 |---|---|
 | **Run statistical tests** | Master toggle. |
-| **Test** | **t-test vs reference condition** — independent two-sample t-test comparing every (treatment, condition) pair against a chosen reference condition. **ANOVA + Tukey HSD** — one-way ANOVA followed by Tukey's honestly significant difference test for all pairwise comparisons. |
+| **Test** | **t-test vs reference condition** — independent two-sample t-test comparing every (treatment, condition) pair against a chosen reference condition. **ANOVA + Tukey HSD** — one-way ANOVA followed by Tukey's honestly significant difference test for all pairwise comparisons. **Each bar vs a value** — tests every bar against a fixed number (e.g. a fold change against 1) and puts the stars straight above the bar, no bracket: a one-sample t-test on its replicates, or, for a single value whose SE comes from an error column (Plot tab → Error bar → From column), a z-test (x − value) / SE. *On log scale* tests log(x) against log(value) with SE/x, the usual test for a ratio. p-values are not corrected across bars. |
 | **Compare** | **Conditions (per treatment)** — compares condition groups within each treatment. **Treatments (per condition)** — compares treatments within each condition group. **All cell means** *(two-way ANOVA only)* — every cell against every other, with a global Sidak correction, matching Prism. |
+| **Test against / on log scale** *(each bar vs a value only)* | The value every bar is tested against (default 1), and whether to test on the log scale. |
 | **Reference condition** *(t-test only)* | The baseline condition all others are compared against. |
 | **Show p-values instead of stars** | Label brackets with `p=0.023` / `p<0.001` instead of `*` / `***`. |
 | **Show significance / Show fold change** | What to print above each bracket. With both on, the fold change (e.g. `1.7x`) sits above the significance label. |
