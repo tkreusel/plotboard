@@ -91,6 +91,8 @@ DEFAULTS: dict[str, object] = {
     "ps_run_stats":        False,
     "ps_test_mode":        "ttest",
     "ps_compare_axis":     "conditions",
+    "ps_test_value":       1.0,        # vs_value: every bar tested against this
+    "ps_test_log":         False,      # vs_value: test on log (ratios, fold changes)
     "ps_show_pvalue":      False,
     "ps_show_significance": True,
     "ps_show_fold_change": False,

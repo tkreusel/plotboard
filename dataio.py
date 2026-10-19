@@ -99,6 +99,9 @@ def run_stat_test(
     test_mode: str,
     compare_axis: str,
     ref_cond: str,
+    test_value: float = 1.0,
+    test_log: bool = False,
+    error_cols: dict | None = None,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
     """Return ``(anova_table, posthoc_df)``.
 
@@ -106,6 +109,9 @@ def run_stat_test(
     are by far the most expensive thing the app does.
     """
     df = load_sheet(_file_bytes, key, sheet)
+    if test_mode == "vs_value":
+        return None, xstats.run_tests_vs_value(
+            apply_error_columns(df, error_cols), test_value, test_log)
     if test_mode == "ttest":
         return None, xstats.run_ttests_vs_reference(df, ref_cond)
     if test_mode == "two_way_anova":

@@ -95,6 +95,49 @@ def run_ttests_vs_reference(
     )
 
 
+def run_tests_vs_value(
+    df: pd.DataFrame,
+    value: float = 1.0,
+    log: bool = False,
+) -> pd.DataFrame:
+    """
+    Test every bar (condition, treatment) against a fixed *value*: a one-sample
+    t-test on its replicates, or, for a single value with an ``error`` (an SE
+    from an error column), a z-test (x - value) / SE.
+
+    log: test log(x) against log(value), the SE becoming SE / x (delta method):
+    the usual way to test a ratio or fold change against 1.  Bars with values
+    <= 0 are then skipped.  p-values are not corrected for multiple bars.
+
+    Returns columns: condition, treatment, test_value, test, p_value, stars
+    """
+    cols = ["condition", "treatment", "test_value", "test", "p_value", "stars"]
+    if log and value <= 0:
+        return pd.DataFrame(columns=cols)
+    ref = np.log(value) if log else value
+    records = []
+    for (cond, treat), grp in df.groupby(["condition", "treatment"], observed=True):
+        vals = grp["value"].dropna().to_numpy(float)
+        err = grp["error"].dropna().to_numpy(float) if "error" in grp else np.array([])
+        if log and (vals <= 0).any():
+            continue
+        if len(vals) >= 2:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                _, p = scipy_stats.ttest_1samp(np.log(vals) if log else vals, ref)
+            test = "one-sample t"
+        elif len(vals) == 1 and len(err) and err[0] > 0:
+            x = vals[0]
+            z = ((np.log(x) if log else x) - ref) / (err[0] / x if log else err[0])
+            p, test = 2 * scipy_stats.norm.sf(abs(z)), "z (SE column)"
+        else:
+            continue
+        records.append({"condition": str(cond), "treatment": str(treat),
+                        "test_value": value, "test": test + (" on log" if log else ""),
+                        "p_value": float(p), "stars": pval_to_stars(p)})
+    return pd.DataFrame(records, columns=cols)
+
+
 def run_tukey(df: pd.DataFrame) -> pd.DataFrame:
     """
     One-way ANOVA + Tukey HSD across conditions, per treatment group.
@@ -321,6 +364,11 @@ def draw_significance_bars(
     """
     if stat_results.empty:
         return
+    if "test_value" in stat_results.columns:   # run_tests_vs_value: no partner bar
+        _draw_value_labels(ax, df, stat_results, log_scale=log_scale,
+                           fontsize=bracket_fontsize, show_pvalue=show_pvalue,
+                           show_ns=show_ns)
+        return
 
     conditions = _ordered_unique(df["condition"])
     treatments = _ordered_unique(df["treatment"])
@@ -502,6 +550,37 @@ def draw_significance_bars(
             ax.set_ylim(top=max_y * 1.25)
         else:
             ax.set_ylim(top=max_y + data_range * 0.09 * 1.5)
+
+
+def _draw_value_labels(ax, df, stat_results, *, log_scale, fontsize,
+                       show_pvalue, show_ns) -> None:
+    """Stars (or p) of run_tests_vs_value straight above each tested bar: above
+    its error bar (an error column, else the SD) or its highest point."""
+    conditions = _ordered_unique(df["condition"])
+    treatments = _ordered_unique(df["treatment"])
+    slot = 0.8 / len(treatments)
+    y_lo, y_hi = ax.get_ylim()
+    tops = []
+    for _, row in stat_results.iterrows():
+        cond, treat = str(row["condition"]), str(row["treatment"])
+        if cond not in conditions or treat not in treatments or (row["stars"] == "ns" and not show_ns):
+            continue
+        cell = df[(df["condition"].astype(str) == cond) & (df["treatment"].astype(str) == treat)]
+        vals = cell["value"].dropna()
+        if vals.empty:
+            continue
+        err = cell["error"].dropna().mean() if "error" in cell else np.nan
+        if np.isnan(err):
+            err = vals.std(ddof=1) if len(vals) > 1 else 0.0
+        top = max(vals.max(), vals.mean() + err)
+        y = top * 1.05 if log_scale else top + (y_hi - y_lo) * 0.02
+        p = float(row["p_value"])
+        label = (f"p={p:.3f}" if p >= 0.001 else "p<0.001") if show_pvalue else row["stars"]
+        x = conditions.index(cond) + (treatments.index(treat) - (len(treatments) - 1) / 2) * slot
+        ax.text(x, y, label, ha="center", va="bottom", fontsize=fontsize, clip_on=False)
+        tops.append(y)
+    if tops:
+        ax.set_ylim(top=max(y_hi, max(tops) * 1.25 if log_scale else max(tops) + (y_hi - y_lo) * 0.1))
 
 
 # ---------------------------------------------------------------------------
