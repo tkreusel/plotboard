@@ -357,7 +357,7 @@ def _draw(
         _draw_legend(ax, treatments, palette=palette, legend_title=legend_title,
                      show_legend=show_legend, legend_inside=legend_inside, fs=fs,
                      use_patches=True)
-        style_kw.update(xlabel=ylabel, ylabel="" if kde_ridge else "Density",
+        style_kw.update(xlabel=ylabel, ylabel="Density",
                         log_scale=False)
         _style_axes(ax, rotate_x=False, **style_kw)
         if kde_ridge:
@@ -367,11 +367,6 @@ def _draw(
                               [str(t) for t in reversed(treatments)])
             else:
                 ax.set_yticks([])
-            # No y axis: each row's baseline (drawn in _draw_kde) is its own x axis.
-            ax.spines["left"].set_visible(False)
-            ax.tick_params(axis="y", length=0)
-            for line in [l for l in ax.lines if l.get_marker() == "^"]:
-                line.remove()  # the "open" spines' y-arrow tip
         _freeze_fonts(ax, font_family)
         return
 

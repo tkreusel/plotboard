@@ -722,6 +722,7 @@ def test_kde_ridgeline_rows_and_log_axis():
         assert len(ax.collections) == 2
         assert [t.get_text() for t in ax.get_yticklabels()] == ["t2", "t1"]
         assert ax.get_xlabel() == "signal"
+        assert ax.get_ylabel() == "Density"
         assert (ax.get_xscale() == "log") == log
         assert ax.collections[0].get_paths()[0].vertices[:, 1].max() > 1  # t1 is the top row
 
