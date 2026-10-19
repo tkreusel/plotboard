@@ -162,6 +162,25 @@ def test_json_bytes_roundtrip_the_data():
     assert dataio.categories(back["condition"]) == ["10", "1", "0.1"]
 
 
+def test_notes_sheet_rides_along():
+    """A "<sheet> notes" sheet is not plottable; its rows go into the export
+    and come back when that export is opened again."""
+    wb = openpyxl.load_workbook(DATA_FILE)
+    ws = wb.create_sheet("Nano notes")
+    ws.append(["treatment", "p"])
+    ws.append(["Drug", 0.01])
+    path = os.path.join(tempfile.mkdtemp(), "notes.xlsx")
+    wb.save(path)
+    raw = open(path, "rb").read()
+    assert dataio.sheet_names(raw, "n") == ["Nano", "Firefly"]
+    rows = dataio.notes(raw, "n", "Nano")
+    assert rows == [{"treatment": "Drug", "p": 0.01}]
+    assert dataio.notes(raw, "n", "Firefly") is None
+    built = bundle.build(_frame(), figure_kwargs={}, settings=presets.DEFAULTS,
+                         sheet="Nano", notes=rows)
+    assert dataio.notes(bundle.to_json(built).encode(), "j", "Nano") == rows
+
+
 def test_app_opens_a_json_with_the_full_sidebar():
     """Open a bundle in the app (uploader stubbed): sidebar tabs appear and the
     bundle's settings and title are applied."""

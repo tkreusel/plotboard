@@ -307,7 +307,8 @@ if fig is not None:
         bundle_of = None if figure_kwargs is None else (
             lambda: xbundle.build(df_plot, figure_kwargs=figure_kwargs,
                                   settings=current, file_label=file_label,
-                                  sheet=ctx.sheet))
+                                  sheet=ctx.sheet,
+                                  notes=dataio.notes(file_bytes, file_key, ctx.sheet)))
         export.render_downloads(
             fig, f"{stem}_{'panel' if panel_mode else safe_sheet}", bundle_of)
 
