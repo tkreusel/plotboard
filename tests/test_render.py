@@ -86,6 +86,19 @@ def test_serve():
         assert err.code == 400 and "error" in json.loads(err.read())
 
 
+def test_every_plot_type_renders_the_same_bytes_twice():
+    """What a bundle can carry: each plot type x error bars x points x log, none may crash, all deterministic
+    (strip jitter is seeded: the same JSON is the same picture)."""
+    n = 0
+    for pt in ("bar", "box", "violin", "line", "hist", "kde"):
+        for var in ({}, {"show_points": True}, {"log_scale": True}, {"error_bar": "sd"}, {"error_bar": "none"},
+                    {"show_legend": True}, {"trendline": "linear"}):
+            b = _bundle(plot_type=pt, **var)
+            first = render.render(b)["svg"]
+            assert first == render.render(b)["svg"], (pt, var)
+            n += 1
+    assert n == 42
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

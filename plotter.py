@@ -411,6 +411,7 @@ def _draw(
     )
 
     if show_points:
+        np.random.seed(0)  # seaborn jitters from the global state: same JSON, same picture
         sns.stripplot(
             data=df, x="condition", y="value", hue="treatment",
             hue_order=treatments, order=conditions,
