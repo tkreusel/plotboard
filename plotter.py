@@ -349,7 +349,7 @@ def _draw(
 
     if plot_type == "kde":
         # Same axes convention as the histogram: values on x, density on y.
-        _draw_kde(
+        kde_scale = _draw_kde(
             ax, df, treatments=treatments, palette=palette, bw=kde_bw,
             alpha=kde_alpha, ridge=kde_ridge, overlap=kde_overlap, spacing=kde_spacing,
             log_scale=log_scale, edge_width=bar_edge_width, edge_color=bar_edge_color,
@@ -362,11 +362,21 @@ def _draw(
         _style_axes(ax, rotate_x=False, **style_kw)
         if kde_ridge:
             # After _style_axes so a y-format or tick interval cannot replace them.
-            if kde_spacing > 0:  # at 0 the rows coincide, so there is nothing to label
-                ax.set_yticks([k * kde_spacing for k in range(len(treatments))],
-                              [str(t) for t in reversed(treatments)])
-            else:
-                ax.set_yticks([])
+            # Treatment name on each row's baseline, density numbers above it. Rows share
+            # one scale, so a value reads the same on every row (up to the next baseline).
+            n = len(treatments)
+            room = min(kde_overlap, kde_spacing * 0.95) if kde_spacing > 0 else kde_overlap
+            vals = [v for v in mticker.MaxNLocator(3).tick_values(0, room / kde_scale) if 0 < v <= room / kde_scale]
+            ticks, labels = [], []
+            for k in range(n if kde_spacing > 0 else 1):
+                base = k * kde_spacing
+                if kde_spacing > 0:
+                    ticks.append(base); labels.append(str(treatments[n - 1 - k]))
+                else:
+                    ticks.append(0); labels.append("0")
+                ticks += [base + v * kde_scale for v in vals]
+                labels += [f"{v:g}" for v in vals]
+            ax.set_yticks(ticks, labels)
         _freeze_fonts(ax, font_family)
         return
 
@@ -536,7 +546,7 @@ def _draw_hist(
 def _draw_kde(
     ax, df, *, treatments, palette, bw, alpha, ridge, overlap, spacing, log_scale,
     edge_width, edge_color,
-) -> None:
+) -> float:
     """One Gaussian KDE per treatment, values pooled across conditions.
 
     Each curve integrates to 1 (in log10 space on a log axis, so the shape
@@ -561,7 +571,7 @@ def _draw_kde(
         grid = np.linspace(vals.min() - pad, vals.max() + pad, 400)
         curves.append((i, 10 ** grid if log_scale else grid, kde(grid)))
     if not curves:
-        return
+        return 1.0
     if log_scale:
         ax.set_xscale("log")
 
@@ -580,6 +590,7 @@ def _draw_kde(
         ax.set_ylim(-0.05, (n - 1) * spacing + overlap * 1.05)
     else:
         ax.set_ylim(bottom=0)
+    return scale
 
 
 def _draw_line(

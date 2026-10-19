@@ -720,7 +720,9 @@ def test_kde_ridgeline_rows_and_log_axis():
                                      n_treatments=2, title="t", ylabel="signal")
         ax = plotter.make_figure(frame, **kwargs).axes[0]
         assert len(ax.collections) == 2
-        assert [t.get_text() for t in ax.get_yticklabels()] == ["t2", "t1"]
+        labels = [t.get_text() for t in ax.get_yticklabels()]
+        assert [l for l in labels if l.startswith("t")] == ["t2", "t1"]  # bottom row first
+        assert any(l.replace(".", "").isdigit() for l in labels)  # density numbers too
         assert ax.get_xlabel() == "signal"
         assert ax.get_ylabel() == "Density"
         assert (ax.get_xscale() == "log") == log
