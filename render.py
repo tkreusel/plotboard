@@ -3,7 +3,8 @@ render.py — draw a figure export (bundle.py) without the app, as SVG.
 
     python render.py figure.plotboard.json      # or - to read the bundle from stdin
 
-prints one JSON object: {"svg", "W", "H", "L", "T", "PW", "PH", "xlim", "ylim", "ylog"}.
+prints one JSON object: {"svg", "W", "H", "L", "T", "PW", "PH", "xlim", "ylim", "ylog"}
+(a list of them for a list of bundles: one process, the imports paid once).
 W x H is the SVG's viewBox (pt); L, T, PW, PH the plot area (the axes box) in the same
 units, xlim / ylim the drawn axis ranges. With them a page can draw over the plot, e.g. a
 marker at x = L + PW * (v - xlim[0]) / (xlim[1] - xlim[0]).
@@ -53,4 +54,5 @@ def render(b: dict) -> dict:
 if __name__ == "__main__":
     src = sys.argv[1] if len(sys.argv) > 1 else "-"
     text = sys.stdin.read() if src == "-" else Path(src).read_text(encoding="utf-8")
-    json.dump(render(json.loads(text)), sys.stdout)
+    b = json.loads(text)
+    json.dump([render(x) for x in b] if isinstance(b, list) else render(b), sys.stdout)

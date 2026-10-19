@@ -51,6 +51,16 @@ def test_dashes_curves_log():
     assert "stroke-dasharray" in r["svg"]
 
 
+def test_cli_list():
+    import json
+    import subprocess
+    two = json.dumps([_bundle(), _bundle(log_scale=True)])
+    out = subprocess.run([sys.executable, os.path.join(os.path.dirname(TESTS_DIR), "render.py"), "-"],
+                         input=two, capture_output=True, text=True, check=True).stdout
+    r = json.loads(out)
+    assert [x["ylog"] for x in r] == [False, True]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
