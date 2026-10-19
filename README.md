@@ -239,6 +239,9 @@ The fifth button, **JSON (data + settings)**, saves everything behind the figure
 | `make_figure_kwargs` | Every argument the figure was drawn with, already resolved: palette as hex colours, axis limits as numbers, font sizes, labels |
 | `preset` | The sidebar settings in preset-file form. Save this object as `.presets/<name>.json` and it shows up as a preset |
 | `source` | Workbook, sheet, export time |
+| `notes` | The rows of a sheet named `<sheet> notes`, if the workbook has one (else `null`) |
+
+**Notes sheet.** Numbers that belong with the figure but are not plotted (p-values from another tool, which wells were compared, the pressure) go in a sheet named after the plotted one plus ` notes`, e.g. `Kinase fold notes`: a header row, then one row per entry. It is not offered in the **Sheet** selector; its rows land in the export as a list of objects keyed by the header, and they survive opening the JSON again and re-exporting.
 
 Redraw it with plotboard:
 

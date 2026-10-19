@@ -42,8 +42,25 @@ def load_workbook(source: Union[str, Path, bytes, io.BytesIO]) -> openpyxl.Workb
     return openpyxl.load_workbook(source, data_only=True)
 
 
+# A sheet named "<sheet> notes" is not plotted: its table (header row, then one
+# row per entry) rides along in that sheet's JSON export, e.g. per-bar p-values.
+NOTES_SUFFIX = " notes"
+
+
 def sheet_names(wb: openpyxl.Workbook) -> list[str]:
-    return wb.sheetnames
+    return [s for s in wb.sheetnames if not s.endswith(NOTES_SUFFIX)]
+
+
+def notes(wb: openpyxl.Workbook, sheet: str) -> list[dict] | None:
+    """Rows of the "<sheet> notes" sheet as dicts keyed by its header, or None."""
+    name = sheet + NOTES_SUFFIX
+    if name not in wb.sheetnames:
+        return None
+    rows = [r for r in wb[name].iter_rows(values_only=True) if any(v is not None for v in r)]
+    if not rows:
+        return None
+    header = [str(h).strip() for h in rows[0] if h is not None]
+    return [dict(zip(header, r)) for r in rows[1:]]
 
 
 def parse_sheet(wb: openpyxl.Workbook, sheet: str) -> pd.DataFrame:

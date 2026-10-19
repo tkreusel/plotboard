@@ -16,6 +16,7 @@ What is in a bundle
                         plain seaborn/matplotlib too
     preset              the ps_* settings in preset-file form: save this object
                         as ``.presets/<name>.json`` and it loads as a preset
+    notes               the "<sheet> notes" sheet's rows (list of dicts), or null
 
 Redrawing it with plotboard::
 
@@ -48,6 +49,7 @@ def build(
     settings: dict,
     file_label: str = "",
     sheet: str = "",
+    notes: list[dict] | None = None,
 ) -> dict:
     """Bundle a figure: *df* and *figure_kwargs* exactly as given to
     ``plotter.make_figure``, *settings* as from ``settings.snapshot()``."""
@@ -70,6 +72,7 @@ def build(
         "stats": None if stats is None or stats.empty else stats.to_dict("records"),
         "make_figure_kwargs": kwargs,
         "preset": presets._preset_payload(settings),
+        "notes": notes,
     })
 
 

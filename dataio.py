@@ -82,6 +82,14 @@ def sheet_names(_file_bytes: bytes, key: str) -> list[str]:
     return xparser.sheet_names(_workbook(_file_bytes, key))
 
 
+@st.cache_data(show_spinner=False)
+def notes(_file_bytes: bytes, key: str, sheet: str) -> list[dict] | None:
+    """The sheet's notes table (parser.notes), carried into the JSON export."""
+    if _is_bundle(_file_bytes):
+        return _bundle(_file_bytes).get("notes")
+    return xparser.notes(_workbook(_file_bytes, key), sheet)
+
+
 @st.cache_data(show_spinner="Parsing sheet…")
 def load_sheet(_file_bytes: bytes, key: str, sheet: str) -> pd.DataFrame:
     if _is_bundle(_file_bytes):
